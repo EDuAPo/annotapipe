@@ -65,7 +65,7 @@ SERVER_IP = "222.223.112.212"
 SERVER_USER = "user"
 SERVER_ZIP_DIR = "/data02/rere_zips"                    # 上传 ZIP 的临时目录
 SERVER_PROCESS_DIR = "/data02/processing"  # 处理中的数据目录
-SERVER_FINAL_DIR = "/data02/test"         # 检查通过后的最终目录
+SERVER_FINAL_DIR = "/data02/"         # 检查通过后的最终目录
 
 # 处理完成后对原始 ZIP 的操作方式
 # "rename": 重命名为 processed_xxx.zip (默认，标记已处理)
@@ -175,6 +175,7 @@ class AnnotationPipeline:
         # 处理结果跟踪
         self.results = {
             'downloaded': [],
+            'download_failed': [],  # 下载失败的文件
             'skipped_server_exists': [],  # 服务器上已存在，跳过下载
             'uploaded': [],
             'processed': [],
@@ -254,8 +255,34 @@ class AnnotationPipeline:
             info = {
                 "标注情况": annotation_status
             }
+            
+            # 确保所有数据都有关键帧数信息
             if name in self.keyframe_counts:
                 info["关键帧数"] = self.keyframe_counts[name]
+            else:
+                # 如果之前没有获取到，尝试重新获取
+                logger.info(f"重新获取 {name} 的关键帧数...")
+                keyframe_count = 0
+                
+                # 优先从最终目录获取
+                final_dir = f"{SERVER_FINAL_DIR}/{name}"
+                keyframe_count = self._get_keyframe_count_remote(final_dir)
+                if keyframe_count > 0:
+                    logger.info(f"  从最终目录获取到 {keyframe_count} 个关键帧")
+                else:
+                    # 从处理目录获取
+                    process_dir = f"{SERVER_DATA_DIR}/{name}"
+                    keyframe_count = self._get_keyframe_count_remote(process_dir)
+                    if keyframe_count > 0:
+                        logger.info(f"  从处理目录获取到 {keyframe_count} 个关键帧")
+                
+                # 记录关键帧数量（即使是0）
+                if keyframe_count >= 0:  # 包括0的情况
+                    with self.keyframe_counts_lock:
+                        self.keyframe_counts[name] = keyframe_count
+                    info["关键帧数"] = keyframe_count
+                    logger.info(f"  ✓ {name} 关键帧数: {keyframe_count}")
+            
             data_info[name] = info
         if not feishu_enabled:
             # 本地TXT统计
@@ -514,10 +541,13 @@ class AnnotationPipeline:
                     else:
                         logger.info(f"    未找到关键帧信息")
                 
-                # 记录关键帧数量
+                # 记录关键帧数量（即使是0也要记录，避免重复获取）
+                with self.keyframe_counts_lock:
+                    self.keyframe_counts[stem] = keyframe_count
                 if keyframe_count > 0:
-                    with self.keyframe_counts_lock:
-                        self.keyframe_counts[stem] = keyframe_count
+                    logger.info(f"    ✓ 关键帧数量: {keyframe_count}")
+                else:
+                    logger.info(f"    ⚠ 关键帧数量: {keyframe_count} (可能文件不存在或为空)")
                 
                 self.results['skipped_server_exists'].append(stem)
                 continue
@@ -532,24 +562,41 @@ class AnnotationPipeline:
                 # 在多个路径模板中查找文件
                 real_url = None
                 found_path = None
-                
+
                 for path_template in DATAWEAVE_PATH_TEMPLATES:
                     dw_path = path_template.format(filename=zip_name)
                     payload = {"uris": [dw_path]}
-                    
+
                     r = requests.post(API_URL, json=payload, headers=headers, timeout=15)
                     r.raise_for_status()
                     data = r.json()
-                    
+
                     # 检查认证错误
                     if data.get("code") != 0:
                         msg = data.get("msg", "")
                         if "Login required" in msg or data.get("code") == 401:
-                            logger.critical("!!! Token 已过期，请更新 AUTH_TOKEN !!!")
-                            return
+                            logger.warning("!!! Token 已过期，尝试重新获取...")
+                            try:
+                                # 尝试重新获取 Token
+                                auth_token = self._get_dataweave_token(force_refresh=True)
+                                headers["Authorization"] = auth_token
+                                logger.info("🔄 Token 刷新成功，重新尝试当前路径")
+                                # 重新尝试当前路径
+                                r = requests.post(API_URL, json=payload, headers=headers, timeout=15)
+                                r.raise_for_status()
+                                data = r.json()
+                                if data.get("code") != 0:
+                                    # 刷新后仍然失败，继续下一个路径
+                                    continue
+                            except Exception as e:
+                                logger.error(f"!!! Token 刷新失败: {e}")
+                                logger.critical("!!! 请手动更新 AUTH_TOKEN 或检查网络连接 !!!")
+                                # 记录当前文件处理失败，但继续处理其他文件
+                                self.results['download_failed'].append(stem)
+                                break  # 跳出路径查找循环，继续下一个文件
                         # 文件不存在，尝试下一个路径
                         continue
-                    
+
                     # 解析 URL
                     url_data = data.get("data", {})
                     if isinstance(url_data, dict) and "urls" in url_data:
@@ -560,7 +607,7 @@ class AnnotationPipeline:
                                 real_url = url
                                 found_path = path_template.split("/")[-2]  # 提取子目录名
                                 break
-                
+
                 if not real_url:
                     logger.warning(f"    在所有路径中均未找到文件")
                     continue
@@ -639,6 +686,13 @@ class AnnotationPipeline:
         for zip_file in zip_files:
             file_name = zip_file.name
             local_size = zip_file.stat().st_size
+            
+            # 检查是否已有 processed_ 前缀的文件，表示已处理
+            processed_name = f"processed_{file_name}"
+            if processed_name in remote_files:
+                logger.info(f"远程已处理: {processed_name}，跳过上传 {file_name}")
+                self.results['uploaded'].append(zip_file.stem)
+                continue
             
             if file_name in remote_files:
                 remote_size = remote_files[file_name]
@@ -918,20 +972,24 @@ if __name__ == "__main__":
                 
                 # 获取关键帧数量（所有处理完成的数据都要统计）
                 keyframe_count = self._get_keyframe_count_remote(remote_dir)
+                with self.keyframe_counts_lock:
+                    self.keyframe_counts[dir_name] = keyframe_count
                 if keyframe_count > 0:
-                    with self.keyframe_counts_lock:
-                        self.keyframe_counts[dir_name] = keyframe_count
                     logger.info(f"    📊 关键帧数量: {keyframe_count}")
+                else:
+                    logger.info(f"    📊 关键帧数量: {keyframe_count} (可能文件不存在)")
             else:
                 logger.error(f"    检查失败: {err}")
                 self.results['check_failed'].append(dir_name)
                 
                 # 即使检查失败也要获取关键帧数量
                 keyframe_count = self._get_keyframe_count_remote(remote_dir)
+                with self.keyframe_counts_lock:
+                    self.keyframe_counts[dir_name] = keyframe_count
                 if keyframe_count > 0:
-                    with self.keyframe_counts_lock:
-                        self.keyframe_counts[dir_name] = keyframe_count
                     logger.info(f"    📊 关键帧数量: {keyframe_count}")
+                else:
+                    logger.info(f"    📊 关键帧数量: {keyframe_count} (可能文件不存在)")
         
         logger.info(f"检查完成: 通过 {len(self.results['check_passed'])}, 失败 {len(self.results['check_failed'])}")
     
@@ -1590,10 +1648,12 @@ if __name__ == "__main__":
                     
                     # 获取关键帧数量
                     keyframe_count = self._get_keyframe_count_remote(remote_data_dir)
+                    with self.keyframe_counts_lock:
+                        self.keyframe_counts[stem] = keyframe_count
                     if keyframe_count > 0:
-                        with self.keyframe_counts_lock:
-                            self.keyframe_counts[stem] = keyframe_count
                         logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count}")
+                    else:
+                        logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count} (可能文件不存在)")
                     
                     # ===== 步骤 5: 移动到最终目录 =====
                     logger.info(f"  [移动] 正在移动到最终目录...")
@@ -1625,10 +1685,12 @@ if __name__ == "__main__":
                     
                     # 即使检查失败，也获取关键帧数量
                     keyframe_count = self._get_keyframe_count_remote(remote_data_dir)
+                    with self.keyframe_counts_lock:
+                        self.keyframe_counts[stem] = keyframe_count
                     if keyframe_count > 0:
-                        with self.keyframe_counts_lock:
-                            self.keyframe_counts[stem] = keyframe_count
                         logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count}")
+                    else:
+                        logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count} (可能文件不存在)")
                 
                 logger.info(f"  → 文件处理完成")
             
@@ -1724,11 +1786,12 @@ if __name__ == "__main__":
                     logger.info(f"  [调试] 尝试从 {remote_data_dir} 获取关键帧数量")
                     keyframe_count = self._get_keyframe_count_remote(remote_data_dir)
                     logger.info(f"  [统计] 📊 跳过文件 {stem} 关键帧数量: {keyframe_count} (目录: {remote_data_dir})")
+                    # 记录所有关键帧数量，即使是0
+                    skipped_files_keyframes[stem] = keyframe_count
                     if keyframe_count > 0:
-                        skipped_files_keyframes[stem] = keyframe_count
                         logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count}")
                     else:
-                        logger.warning(f"  [警告] 跳过文件 {stem} 未能获取关键帧数量 (目录: {remote_data_dir})")
+                        logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count} (可能文件不存在)")
             
             # 关闭主连接，让每个线程创建自己的连接
             self._close_server()
@@ -1959,8 +2022,12 @@ if __name__ == "__main__":
                 if keyframe_count > 0:
                     with self.keyframe_counts_lock:
                         self.keyframe_counts[stem] = keyframe_count
+                    logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count}")
                 else:
-                    logger.warning(f"  [警告] 处理失败文件 {stem} 未能获取关键帧数量")
+                    # 即使获取失败，也记录为0
+                    with self.keyframe_counts_lock:
+                        self.keyframe_counts[stem] = 0
+                    logger.info(f"  [统计] 📊 关键帧数量: 0 (未能获取)")
                 
                 # 将处理失败的文件添加到结果中，以便统计
                 with results_lock:
@@ -2012,12 +2079,12 @@ if __name__ == "__main__":
                 
                 # 获取关键帧数量（在移动之前，从processing目录获取）
                 keyframe_count = self._get_keyframe_count_remote_threaded(ssh, remote_data_dir)
+                with self.keyframe_counts_lock:
+                    self.keyframe_counts[stem] = keyframe_count
                 if keyframe_count > 0:
-                    with self.keyframe_counts_lock:
-                        self.keyframe_counts[stem] = keyframe_count
                     logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count}")
                 else:
-                    logger.warning(f"  [警告] 检查完成文件 {stem} 未能获取关键帧数量 (目录: {remote_data_dir})")
+                    logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count} (可能文件不存在)")
                 
                 # ===== 步骤 5: 移动 =====
                 src = f"{SERVER_PROCESS_DIR}/{stem}"
@@ -2035,10 +2102,10 @@ if __name__ == "__main__":
                 if status == 0:
                     with results_lock:
                         self.results['moved_to_final'].append(stem)
-                    # 流水线成功完成，删除本地 ZIP 文件
-                    if local_zip.exists():
-                        local_zip.unlink()
-                        logger.info(f"  [清理] 已删除本地 ZIP: {local_zip.name}")
+                    # 流水线成功完成，删除本地 ZIP 文件 (已禁用)
+                    # if local_zip.exists():
+                    #     local_zip.unlink()
+                    #     logger.info(f"  [清理] 已删除本地 ZIP: {local_zip.name}")
                 else:
                     self._log_error(stem, "移动", f"移动到最终目录失败: {move_err}")
             else:
@@ -2047,12 +2114,12 @@ if __name__ == "__main__":
                 
                 # 检查失败的数据也获取关键帧数量
                 keyframe_count = self._get_keyframe_count_remote_threaded(ssh, remote_data_dir)
+                with self.keyframe_counts_lock:
+                    self.keyframe_counts[stem] = keyframe_count
                 if keyframe_count > 0:
-                    with self.keyframe_counts_lock:
-                        self.keyframe_counts[stem] = keyframe_count
                     logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count}")
                 else:
-                    logger.warning(f"  [警告] 检查失败文件 {stem} 未能获取关键帧数量 (目录: {remote_data_dir})")
+                    logger.info(f"  [统计] 📊 关键帧数量: {keyframe_count} (可能文件不存在)")
             
             return check_passed
             
@@ -2270,6 +2337,7 @@ if __name__ == "__main__":
         stats = [
             ("⏭ 跳过(已存在)", len(self.results['skipped_server_exists'])),
             ("⬇ 下载成功", len(self.results['downloaded'])),
+            ("⬇ 下载失败", len(self.results['download_failed'])),
             ("⬆ 上传成功", len(self.results['uploaded'])),
             ("⚙ 处理成功", len(self.results['processed'])),
             ("✓ 检查通过", len(self.results['check_passed'])),
