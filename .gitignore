@@ -89,6 +89,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+virtual_server/
 
 # Spyder project settings
 .spyderproject
@@ -122,3 +123,6 @@ Thumbs.db
 local_report.txt
 reports/
 test_jsons/
+
+# Config secrets (keep .env.example, ignore actual .env)
+configs/.env

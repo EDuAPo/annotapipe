@@ -1,443 +1,192 @@
-# 标注数据质量检查系统
+# AnnotaPipe
 
-> 工程级标注数据质量检查系统，专为低速无人车场景优化，支持多帧轨迹一致性验证、INS数据插值补偿和智能运动状态分类。
+**标注数据自动化处理流水线** - 用于从 DataWeave 平台下载数据、上传到远程服务器、处理和检查标注质量。
 
-## 📋 目录
+## ✨ 功能特性
 
-- [核心特性](#-核心特性)
-- [技术架构](#-技术架构)
-- [快速开始](#-快速开始)
-- [配置说明](#️-配置说明)
-- [检查规则详解](#-检查规则详解)
-- [优化特性](#-优化特性)
-- [使用示例](#-使用示例)
-- [性能指标](#-性能指标)
-- [故障排除](#-故障排除)
+- 🚀 多种运行模式：优化模式、并行模式、流式模式
+- 📥 自动从 DataWeave 下载标注数据
+- 📤 SFTP 批量上传到远程服务器
+- 🔍 标注质量自动检查
+- 📊 飞书多维表格同步（可选）
+- 📝 处理日志和进度追踪
 
----
-
-## ✨ 核心特性
-
-### 🎯 低速无人车专项优化
-- **运动状态智能分类**: 自动识别静态/低速/正常速度状态，应用相应的检查规则
-- **INS数据插值补偿**: 高精度时间同步，消除自车位姿误差
-- **多帧轨迹一致性**: 使用前后帧数据验证轨迹合理性，提高检测准确率
-
-### 🔧 工程级实现
-- **模块化架构**: 规则检查器、批处理器、数据加载器等独立模块
-- **类型安全**: 完整的类型注解，提高代码可维护性
-- **错误处理**: 完善的异常处理和错误追溯机制
-- **配置驱动**: YAML配置支持，灵活调整检查参数
-
-### 📊 质量保证
-- **多维度验证**: 位置、姿态、尺寸、速度等多方面检查
-- **动态参数调整**: 根据运动状态自动调整检查阈值
-- **轨迹平滑性**: 检测轨迹抖动和不连续问题
-- **中文日志追溯**: 完整的流水线处理日志，支持数据处理可追溯性
-
----
-
-## 🏗️ 技术架构
+## 📁 项目结构
 
 ```
-标注质量检查系统
-├── rules_checker.py      # 核心规则检查引擎
-│   ├── RuleChecker       # 规则检查主类
-│   ├── 运动状态分类      # static/low_speed/normal_speed
-│   ├── INS数据插值      # 时间同步精度提升
-│   └── 多帧轨迹验证     # 轨迹一致性检查
-├── batch_processor.py    # 批量处理控制器
-│   ├── BatchProcessor    # 批处理逻辑
-│   ├── 轨迹构建         # 多帧轨迹构造
-│   └── 并行处理         # 高效批处理
-├── data_loader.py        # 数据加载器
-├── pipeline.py          # 主处理流水线
-├── visualizer.py        # 可视化工具
-└── utils.py             # 工具函数
+annotapipe/
+├── run_pipeline.py          # 命令行入口
+├── configs/                  # 配置文件
+│   ├── pipeline.yaml        # 流水线主配置
+│   ├── check_rules.yaml     # 标注检查规则
+│   ├── feishu.yaml          # 飞书配置
+│   └── .env.example         # 环境变量模板
+├── src/
+│   ├── pipeline/            # 核心流水线模块
+│   │   ├── runner.py        # 流水线运行器
+│   │   ├── downloader.py    # 文件下载器
+│   │   ├── uploader.py      # 文件上传器
+│   │   ├── processor.py     # 远程处理器
+│   │   ├── checker.py       # 标注检查器
+│   │   ├── tracker.py       # 进度追踪器
+│   │   └── ...
+│   └── remote_scripts/      # 远程执行脚本
+│       ├── zip_worker.py
+│       └── annotation_checker.py
+├── tools/                   # 辅助工具
+│   ├── annotation_stats.py
+│   └── keyframe_counter.py
+└── data/                    # 数据目录
 ```
 
-### 核心算法
+## 📦 依赖
 
-#### 1. INS数据插值算法
-```python
-def get_ins_interpolated(self, timestamp: int) -> Optional[Dict]:
-    """线性插值获取精确时间点的INS数据"""
-    # 在前后INS数据点之间进行线性插值
-    # 支持位置、姿态、速度的精确插值
+| 包名 | 说明 |
+|------|------|
+| `requests` | HTTP 请求（下载文件） |
+| `pyyaml` | YAML 配置解析 |
+| `paramiko` | SSH/SFTP 客户端 |
+| `numpy` | 数值计算（标注检查） |
+
+新环境部署只需：
+
+```bash
+pip install -r requirements.txt
 ```
 
-#### 2. 运动状态分类
-```python
-def classify_motion_state(self, velocity: float) -> str:
-    """三态运动分类：静态/低速/正常速度"""
-    if velocity < 0.1:      # 静止阈值
-        return 'static'
-    elif velocity < 0.5:    # 低速阈值 (1.8 km/h)
-        return 'low_speed'
-    else:
-        return 'normal_speed'
-```
-
-#### 3. 多帧轨迹一致性检查
-```python
-def check_trajectory_consistency(self, track: List[Dict]) -> bool:
-    """验证轨迹在多帧中的合理性"""
-    # 检查速度连续性、加速度合理性
-    # 检测轨迹异常和抖动
-```
-
----
 
 ## 🚀 快速开始
 
-### 环境要求
-- Python 3.8+
-- numpy
-- pyyaml
-- open3d (可视化)
-
-### 安装依赖
-```bash
-pip install numpy pyyaml open3d
-```
-
-### 基本使用
-
-```python
-from rules_checker import RuleChecker
-import yaml
-
-# 加载配置
-with open('configs/default.yaml') as f:
-    config = yaml.safe_load(f)
-
-# 创建规则检查器
-checker = RuleChecker(config)
-
-# 检查单个对象
-obj = {
-    'position': {'x': 10.0, 'y': 5.0, 'z': 0.0},
-    'rotation': {'x': 0.0, 'y': 0.0, 'z': 0.0, 'w': 1.0},
-    'size': {'length': 4.5, 'width': 1.8, 'height': 1.5},
-    'velocity': {'x': 0.0, 'y': 0.0, 'z': 0.0}
-}
-
-# 运动状态分类
-motion_state = checker.classify_motion_state(0.05)  # 0.05 m/s
-print(f"运动状态: {motion_state}")  # 输出: static
-
-# 规则检查
-result = checker.check_basic_rules(obj)
-print(f"检查结果: {'通过' if result else '失败'}")
-```
-
-### 批量处理
-
-```python
-from batch_processor import BatchProcessor
-
-# 创建批处理器
-processor = BatchProcessor(config)
-
-# 处理整个数据集
-results = processor.process_annotations(annotations_data)
-```
-
----
-
-## 📋 日志系统
-
-### 中文日志追溯
-系统提供完整的流水线处理日志，支持数据处理全流程可追溯性：
-
-- **中文字段显示**: 所有日志字段使用中文命名，便于理解
-- **时间线记录**: 记录关键处理步骤的时间点和耗时
-- **详细统计**: 包含文件处理状态、错误信息、性能指标等
-- **服务器同步**: 日志自动上传到服务器 `/data02/dataset/logs/` 目录
-
-### 日志结构
-```json
-{
-  "运行ID": "20260108_111936",
-  "运行模式": "async_parallel",
-  "总文件数": 100,
-  "处理步骤统计": {
-    "下载完成": 95,
-    "上传完成": 95,
-    "处理完成": 93,
-    "检查通过": 88,
-    "检查失败": 5,
-    "移至最终目录": 88
-  },
-  "性能指标": {
-    "总耗时秒数": 1250.5,
-    "平均每文件耗时秒数": 12.5,
-    "处理速度_文件每分钟": 4.8
-  },
-  "错误记录": [...],
-  "文件处理详情": [...],
-  "处理时间线": [...]
-}
-```
-
-### 日志文件位置
-- **本地**: `LOCAL_TEMP_DIR/logs/pipeline_run_YYYYMMDD_HHMMSS.json`
-- **服务器**: `/data02/dataset/logs/pipeline_run_YYYYMMDD_HHMMSS.json`
-
----
-
-## ⚙️ 配置说明
-
-### 规则配置 (`configs/default.yaml`)
-
-```yaml
-rules:
-  # 位置检查
-  position:
-    max_height: 10.0          # 最大高度限制
-    min_height: -2.0          # 最小高度限制
-    max_distance: 100.0       # 最大距离限制
-
-  # 姿态检查
-  rotation:
-    angle_tolerance: 0.3      # 角度容限 (弧度)
-
-  # 尺寸检查
-  size:
-    min_length: 0.1           # 最小长度
-    max_length: 20.0          # 最大长度
-    min_width: 0.1            # 最小宽度
-    max_width: 10.0           # 最大宽度
-
-  # 速度检查
-  velocity:
-    max_speed: 50.0           # 最大速度 (m/s)
-
-# 低速无人车优化参数
-low_speed_vehicle:
-  static_threshold: 0.1       # 静止阈值 (m/s)
-  low_speed_threshold: 0.5    # 低速阈值 (m/s)
-  angle_tolerance: 0.3        # 角度容限 (弧度)
-  min_track_length: 3         # 最短轨迹长度
-  smooth_window: 3            # 平滑窗口大小
-```
-
-### 运动状态特定参数
-
-| 运动状态 | 角度容限 | 速度容限 | 轨迹检查 |
-|---------|---------|---------|---------|
-| 静态 | 0.5 rad | 0.1 m/s | 宽松 |
-| 低速 | 0.3 rad | 0.5 m/s | 中等 |
-| 正常 | 0.2 rad | 50 m/s | 严格 |
-
----
-
-## 🔍 检查规则详解
-
-### 1. 基本规则检查
-
-#### 位置合理性
-- **高度检查**: 确保物体在合理的高度范围内
-- **距离检查**: 验证物体距离不在异常范围内
-- **地面投影**: 检查物体是否正确投影到地面
-
-#### 姿态合理性
-- **四元数归一化**: 验证旋转四元数是否正确归一化
-- **欧拉角转换**: 检查欧拉角转换的合理性
-- **朝向一致性**: 验证物体朝向与运动方向的一致性
-
-#### 尺寸合理性
-- **物理约束**: 确保尺寸在物理合理范围内
-- **类别特定**: 不同物体类别有不同的尺寸限制
-- **比例检查**: 验证长宽高比例的合理性
-
-### 2. 运动学规则检查
-
-#### 速度一致性
-- **速度范围**: 检查速度在合理范围内
-- **加速度限制**: 验证加速度不超过物理限制
-- **运动连续性**: 确保相邻帧间的速度变化合理
-
-#### 轨迹平滑性
-- **轨迹连续**: 检查轨迹在时间序列上的连续性
-- **抖动检测**: 识别轨迹中的异常抖动
-- **插值验证**: 验证轨迹插值结果的合理性
-
-### 3. 多帧一致性检查
-
-#### 轨迹一致性
-- **前后帧验证**: 使用前后帧数据验证当前帧的合理性
-- **运动预测**: 基于历史轨迹预测未来位置
-- **异常检测**: 识别轨迹中的异常点
-
-#### 时空一致性
-- **时间同步**: 确保多传感器数据的时间同步
-- **空间对齐**: 验证不同坐标系下的空间一致性
-- **INS补偿**: 使用INS数据补偿自车运动影响
-
----
-
-## 🚀 优化特性
-
-### 低速无人车专项优化
-
-#### 1. 运动状态自适应
-```python
-# 根据速度自动调整检查参数
-if motion_state == 'static':
-    angle_tol = 0.5  # 静态时角度容限更大
-elif motion_state == 'low_speed':
-    angle_tol = 0.3  # 低速时中等容限
-else:
-    angle_tol = 0.2  # 正常速度时严格检查
-```
-
-#### 2. INS数据插值补偿
-- **时间同步精度**: 从100ms提升到1ms级别
-- **线性插值**: 在INS数据点间进行精确插值
-- **多维度补偿**: 位置、姿态、速度的全面补偿
-
-#### 3. 多帧轨迹验证
-- **轨迹构建**: 自动构建物体在多帧中的轨迹
-- **一致性检查**: 验证轨迹的物理合理性
-- **异常检测**: 识别轨迹中的不连续和异常点
-
-### 性能优化
-
-#### 异步处理
-- **协程并发**: 支持数千并发协程处理
-- **I/O优化**: 异步网络和文件操作
-- **内存效率**: 流式处理大文件，避免内存溢出
-
-#### 智能缓存
-- **INS索引**: 时间戳快速索引，O(1)查找
-- **轨迹缓存**: 多帧轨迹数据缓存
-- **结果缓存**: 检查结果缓存，避免重复计算
-
----
-
-## 📊 性能指标
-
-### 检查准确率
-- **静态物体**: >95%准确率
-- **低速运动**: >90%准确率
-- **正常运动**: >85%准确率
-
-### 处理性能
-- **单文件处理**: <100ms
-- **批量处理**: 1000+文件/分钟
-- **内存占用**: <500MB (大文件处理)
-
-### 扩展性
-- **并发处理**: 支持并行处理多个文件
-- **分布式部署**: 可部署到多节点集群
-- **配置热更新**: 支持运行时配置更新
-
----
-
-## 🔧 故障排除
-
-### 常见问题
-
-#### 1. INS数据未找到
-```
-错误: 未找到 ins.json，将不进行自车位姿补偿
-解决: 确保ins.json文件与标注数据在同一目录
-```
-
-#### 2. 相对导入失败
-```
-错误: attempted relative import with no known parent package
-解决: 使用绝对导入或从项目根目录运行
-```
-
-#### 3. 配置加载失败
-```
-错误: config file not found
-解决: 检查configs/default.yaml文件是否存在
-```
-
-### 调试模式
-
-```python
-# 启用详细日志
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-# 运行检查
-checker = RuleChecker(config, debug=True)
-```
-
-### 性能监控
-
-```python
-# 启用性能分析
-import cProfile
-cProfile.run('processor.process_annotations(data)')
-```
-
----
-
-## 📈 更新日志
-
-### v2.0.0 (2024-01-XX)
-- ✨ **新增** 低速无人车专项优化
-- ✨ **新增** INS数据插值补偿
-- ✨ **新增** 多帧轨迹一致性检查
-- ✨ **新增** 运动状态智能分类
-- 🔧 **优化** 异步处理架构
-- 🔧 **优化** 模块化代码结构
-- 📊 **提升** 检查准确率 15-20%
-
-### v1.0.0 (2024-01-XX)
-- 🎯 基础标注质量检查功能
-- 📊 批量处理能力
-- 🔍 规则配置系统
-
----
-
-## 🤝 贡献指南
-
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
-
-### 开发环境设置
+### 1. 安装依赖
 
 ```bash
-# 克隆项目
-git clone https://github.com/your-repo/annotation-checker.git
-cd annotation-checker
-
-# 创建虚拟环境
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# 或 .venv\Scripts\activate  # Windows
-
-# 安装依赖
 pip install -r requirements.txt
-
-# 运行测试
-python -m pytest tests/
 ```
 
----
+### 2. 配置环境
 
-## 📄 许可证
+```bash
+# 复制环境变量模板
+cp configs/.env.example configs/.env
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+# 编辑 .env 填入实际凭证
+vim configs/.env
+```
 
----
+### 3. 运行流水线
 
-## 📞 联系方式
+```bash
+# 基本用法
+python run_pipeline.py --json_dir ./data
 
-- 项目维护者: [Your Name]
-- 邮箱: your.email@example.com
-- 项目主页: [https://github.com/your-repo/annotation-checker](https://github.com/your-repo/annotation-checker)
+# 指定配置文件
+python run_pipeline.py --json_dir ./data --config configs/pipeline.yaml
 
----
+# 并行模式，4 个工作线程
+python run_pipeline.py --json_dir ./data --mode parallel --workers 4
 
-*最后更新: 2024-01-XX*</content>
-<parameter name="filePath">/home/zgw/projects/annotation_checker/README.md
+# 流式模式
+python run_pipeline.py --json_dir ./data --mode streaming
+```
+
+## ⚙️ 运行模式
+
+| 模式 | 说明 | 适用场景 |
+|------|------|----------|
+| `optimized` | 下载并行 + 服务器操作串行（默认） | 推荐，平衡效率和稳定性 |
+| `parallel` | 全并行模式，多线程独立处理 | 大批量数据处理 |
+| `streaming` | 流式模式，逐个处理 | 调试或小批量数据 |
+
+## 📋 命令行参数
+
+| 参数 | 简写 | 说明 | 默认值 |
+|------|------|------|--------|
+| `--json_dir` | `-j` | JSON 文件目录（必需） | - |
+| `--zip_dir` | `-z` | 本地 ZIP 缓存目录 | 自动 |
+| `--mode` | `-m` | 运行模式 | `optimized` |
+| `--workers` | `-w` | 并发数 | `3` |
+| `--config` | `-c` | 配置文件路径 | - |
+
+## 🔧 配置说明
+
+详细配置说明请参考 [configs/README.md](configs/README.md)
+
+### 环境变量
+
+| 变量名 | 说明 |
+|--------|------|
+| `DATAWEAVE_USERNAME` | DataWeave 用户名 |
+| `DATAWEAVE_PASSWORD` | DataWeave 密码 |
+| `SERVER_PRIMARY_PASSWORD` | 主服务器 SSH 密码 |
+| `FEISHU_APP_ID` | 飞书应用 ID |
+| `FEISHU_APP_SECRET` | 飞书应用密钥 |
+
+## 📊 处理流程
+
+```
+JSON 文件 → 下载 ZIP → 上传服务器 → 解压处理 → 质量检查 → 移动到最终目录
+                                                    ↓
+                                            记录和追踪（本地/飞书）
+```
+
+### 数据完整性保护
+
+#### 下载完整性
+- 验证文件大小与 `Content-Length` 一致
+- 使用 `zipfile.testzip()` 验证 ZIP 文件 CRC 校验
+- 下载失败自动重试 3 次
+
+#### 上传完整性
+- 上传到临时文件 `.uploading`，成功后才重命名
+- 验证文件大小（本地 vs 远程）
+- 验证 MD5 校验和（默认启用）
+- 失败时自动清理临时文件
+- 流水线启动时自动清理残留的临时文件
+
+#### 异常中断处理
+| 场景 | 处理方式 |
+|------|----------|
+| 上传中断 | 临时文件残留，下次启动时自动清理 |
+| 验证失败 | 删除临时文件，返回失败 |
+| 服务器已存在 | 跳过上传，继续处理 |
+
+### 飞书追踪
+
+流水线结束后自动同步到飞书多维表格：
+- 按"数据包名称"字段匹配，已存在则更新，不存在则新增
+- 跳过的数据（服务器已存在）也会被记录
+- 记录字段：数据包名称、标注情况、关键帧数、上传状态、更新时间
+
+### 服务器端操作
+
+| 步骤 | 操作 | 说明 |
+|------|------|------|
+| 1 | 脚本部署 | 上传 `zip_worker.py`、`annotation_checker.py` 到 `/tmp/` |
+| 2 | 状态检查 | 扫描已有 ZIP 和已完成目录，跳过重复处理 |
+| 3 | ZIP 处理 | 解压 ZIP，用新 JSON 替换 `sample.json` |
+| 4 | 质量检查 | 执行标注检查，生成报告到 `{process_dir}/reports/` |
+| 5 | 移动数据 | 检查通过后移动到最终目录（已存在则覆盖） |
+
+### 服务器目录结构
+
+```
+服务器:
+├── {zip_dir}/              # ZIP 存放目录
+│   ├── xxx.zip             # 待处理
+│   └── processed_xxx.zip   # 已处理（配置为 rename 时）
+├── {process_dir}/          # 处理中目录
+│   ├── {stem}/             # 解压后的数据
+│   └── reports/            # 检查报告
+│       └── report_{stem}.txt
+└── {final_dir}/            # 最终目录（检查通过后）
+    └── {stem}/             # 完成的数据
+```
+
+## 📖 更多文档
+
+- [Pipeline 模块详解](src/pipeline/README.md)
+- [配置文件说明](configs/README.md)
+
+## License
+
+MIT

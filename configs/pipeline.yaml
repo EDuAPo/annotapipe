@@ -1,0 +1,84 @@
+# Pipeline 配置文件 v2.0
+# 此文件包含流水线运行所需的所有配置
+# 敏感信息请通过环境变量设置，参考 .env.example
+
+# =============================================================================
+# 服务器配置
+# =============================================================================
+servers:
+  - name: "primary"
+    ip: "222.223.112.212"
+    user: "user"
+    # password 通过环境变量 SERVER_PRIMARY_PASSWORD 设置
+    zip_dir: "/data02/rere_zips"
+    process_dir: "/data02/processing"
+    final_dir: "/data02/dataset/scenesnew"
+    priority: 1
+    enabled: true
+
+  # 备用服务器（可选）
+  # - name: "backup"
+  #   ip: "192.168.1.100"
+  #   user: "backup_user"
+  #   zip_dir: "/data/backup/zips"
+  #   process_dir: "/data/backup/processing"
+  #   final_dir: "/data/backup/final"
+  #   priority: 2
+  #   enabled: false
+
+# =============================================================================
+# DataWeave API 配置
+# =============================================================================
+dataweave:
+  base_url: "https://dataweave.enableai.cn/api/v4"
+  # username/password 通过环境变量 DATAWEAVE_USERNAME/DATAWEAVE_PASSWORD 设置
+  
+  # 文件搜索路径模板（按优先级排序）
+  path_templates:
+    - "dataweave://my/TO_RERE/盲区数据/{filename}"
+    - "dataweave://my/TO_RERE/7Lidar_data/{filename}"
+    - "dataweave://my/TO_RERE/已上传平台/{filename}"
+    - "dataweave://my/TO_RERE/未上传平台/{filename}"
+    - "dataweave://my/TO_RERE/剔除非关键帧&重新上传/{filename}"
+    - "dataweave://my/TO_RERE/12-9/{filename}"
+
+# =============================================================================
+# 本地目录配置
+# =============================================================================
+local:
+  temp_dir: "/media/viper/T7/pipeline_downzips/"  # ZIP临时存储
+  check_dir: null  # 检查报告目录，null则使用temp_dir/check_data
+
+# =============================================================================
+# 处理选项
+# =============================================================================
+processing:
+  # ZIP处理后操作: rename(重命名为.done), delete(删除), keep(保留)
+  zip_after_process: "rename"
+  
+  # 是否重命名JSON文件为annotations.json
+  rename_json: true
+  
+  # 检查规则配置文件路径
+  check_config_path: "configs/check_rules.yaml"
+
+# =============================================================================
+# 并发配置
+# =============================================================================
+concurrency:
+  # 最大工作线程数
+  max_workers: 3
+  
+  # 下载并发数
+  download_workers: 5
+  
+  # 批处理大小
+  batch_size: 20
+
+# =============================================================================
+# 日志配置
+# =============================================================================
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s %(message)s"
+  date_format: "%H:%M:%S"
