@@ -23,6 +23,7 @@ from .processor import RemoteProcessor
 from .checker import AnnotationChecker
 from .tracker import Tracker, TrackingRecord, create_tracking_records
 from .server_logger import ServerLogger, ProcessingRecord
+from .state import StateManager, ProcessStatus
 from .runner import PipelineRunner, PipelineResult, ProgressTracker
 
 __all__ = [
@@ -51,6 +52,9 @@ __all__ = [
     # 服务器日志
     "ServerLogger",
     "ProcessingRecord",
+    # 状态管理
+    "StateManager",
+    "ProcessStatus",
     # 运行器
     "PipelineRunner",
     "PipelineResult",

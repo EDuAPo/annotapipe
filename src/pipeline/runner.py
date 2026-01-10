@@ -18,6 +18,7 @@ from .downloader import Downloader
 from .processor import RemoteProcessor
 from .server_logger import ServerLogger
 from .tracker import Tracker, create_tracking_records
+from .state import StateManager, ProcessStatus
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +153,9 @@ class PipelineRunner:
         self._deploy_lock = threading.Lock()
         self._scripts_deployed = False
         self.server_logger: Optional[ServerLogger] = None
+        
+        # 状态管理器（断点续传支持）
+        self.state_manager = StateManager(base_dir)
     
     def run(self, mode: str = "optimized", workers: int = None):
         """
@@ -363,29 +367,44 @@ class PipelineRunner:
         remote_zip = f"{server.zip_dir}/{zip_name}"
         
         try:
+            # 检查是否可以从中间状态恢复
+            current_status = self.state_manager.get_status(stem)
+            skip_download = self.state_manager.can_skip_download(stem)
+            skip_upload = self.state_manager.can_skip_upload(stem)
+            
+            # 检查 process_dir 中是否已有解压的数据
+            in_processing = stem in state.get('processing_dirs', set())
+            
             # 下载
-            if zip_name not in state['zip_files'] and not self.downloader.is_valid_zip(local_zip):
+            if not skip_download and zip_name not in state['zip_files'] and not self.downloader.is_valid_zip(local_zip):
                 if not self.downloader.download_file(zip_name, local_zip):
                     self.result.log_error(stem, "下载", "下载失败")
                     self.result.check_failed.append(stem)
+                    self.state_manager.update(stem, ProcessStatus.FAILED, "下载失败")
                     return False
                 self.result.downloaded.append(stem)
+                self.state_manager.update(stem, ProcessStatus.DOWNLOADED)
             
             # 上传
-            if zip_name not in state['zip_files'] and local_zip.exists():
+            if not skip_upload and zip_name not in state['zip_files'] and local_zip.exists():
                 if not ssh.upload_file(str(local_zip), remote_zip):
                     self.result.log_error(stem, "上传", "上传失败")
                     self.result.check_failed.append(stem)
+                    self.state_manager.update(stem, ProcessStatus.FAILED, "上传失败")
                     return False
                 self.result.uploaded.append(stem)
+                self.state_manager.update(stem, ProcessStatus.UPLOADED)
             
-            # 处理
-            success, err = processor.process_zip(remote_zip, str(json_file), stem)
-            if not success:
-                self.result.log_error(stem, "处理", err)
-                self.result.check_failed.append(stem)
-                return False
+            # 处理（如果 process_dir 中已有数据则跳过）
+            if not in_processing:
+                success, err = processor.process_zip(remote_zip, str(json_file), stem)
+                if not success:
+                    self.result.log_error(stem, "处理", err)
+                    self.result.check_failed.append(stem)
+                    self.state_manager.update(stem, ProcessStatus.FAILED, err)
+                    return False
             self.result.processed.append(stem)
+            self.state_manager.update(stem, ProcessStatus.PROCESSED)
             
             # 检查
             data_dir = f"{server.process_dir}/{stem}"
@@ -398,12 +417,14 @@ class PipelineRunner:
             if not passed:
                 self.result.log_error(stem, "检查", f"发现 {issue_count} 个问题帧")
                 self.result.check_failed.append(stem)
+                self.state_manager.update(stem, ProcessStatus.CHECKED, f"检查失败: {issue_count} 个问题帧")
                 # 下载报告
                 local_report = self.local_check_dir / f"report_{stem}.txt"
                 ssh.download_file(report, str(local_report))
                 return False
             
             self.result.check_passed.append(stem)
+            self.state_manager.update(stem, ProcessStatus.CHECKED)
             
             # 移动
             success, dst = processor.move_to_final(stem)
@@ -415,6 +436,8 @@ class PipelineRunner:
                 # 记录服务器日志
                 if self.server_logger:
                     self.server_logger.log_success(stem, kf)
+                # 标记完成
+                self.state_manager.update(stem, ProcessStatus.COMPLETED)
             else:
                 self.result.log_error(stem, "移动", dst)
             
@@ -423,6 +446,7 @@ class PipelineRunner:
         except Exception as e:
             self.result.log_error(stem, "异常", str(e))
             self.result.check_failed.append(stem)
+            self.state_manager.update(stem, ProcessStatus.FAILED, str(e))
             # 记录失败日志
             if self.server_logger:
                 self.server_logger.log_failure(stem, str(e))

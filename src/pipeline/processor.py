@@ -76,9 +76,13 @@ class RemoteProcessor:
         # 获取已处理完成的目录
         processed_dirs = set(self.ssh.list_dirs(server.final_dir))
         
+        # 获取处理中的目录（断点续传支持）
+        processing_dirs = set(self.ssh.list_dirs(server.process_dir))
+        
         return {
             "zip_files": zip_files,
             "processed_dirs": processed_dirs,
+            "processing_dirs": processing_dirs,
         }
     
     def process_zip(self, zip_path: str, json_path: str, stem: str) -> Tuple[bool, str]:

@@ -5,6 +5,7 @@
 import time
 import logging
 import zipfile
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 import requests
@@ -15,51 +16,68 @@ logger = logging.getLogger(__name__)
 
 
 class TokenManager:
-    """Token 管理器，支持自动刷新"""
+    """Token 管理器，支持自动刷新（线程安全）"""
     
-    def __init__(self, config: DataWeaveConfig):
-        self.config = config
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls, config: DataWeaveConfig = None):
+        """单例模式，确保多线程共享同一个 Token"""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self, config: DataWeaveConfig = None):
+        if self._initialized:
+            return
+        self.config = config or get_config().dataweave
         self._token: Optional[str] = None
         self._token_time: Optional[float] = None
         self._max_age = 50 * 60  # 50分钟
+        self._token_lock = threading.Lock()
+        self._initialized = True
     
     def get_token(self, force_refresh: bool = False) -> str:
-        """获取有效的 Token"""
-        if not force_refresh and self._token and self._token_time:
-            if time.time() - self._token_time < self._max_age:
-                return self._token
-        
-        if not self.config.username or not self.config.password:
+        """获取有效的 Token（线程安全）"""
+        with self._token_lock:
+            if not force_refresh and self._token and self._token_time:
+                if time.time() - self._token_time < self._max_age:
+                    return self._token
+            
+            if not self.config.username or not self.config.password:
+                return f"Bearer {self.config.token}" if self.config.token else ""
+            
+            for attempt in range(3):
+                try:
+                    login_data = {
+                        "email": self.config.username,
+                        "password": self.config.password
+                    }
+                    headers = {
+                        "User-Agent": "Mozilla/5.0",
+                        "Content-Type": "application/json",
+                    }
+                    
+                    r = requests.post(self.config.login_url, json=login_data, headers=headers, timeout=15)
+                    data = r.json()
+                    
+                    if data.get("code") == 0:
+                        token_data = data.get("data", {}).get("token", {})
+                        access_token = token_data.get("access_token")
+                        if access_token:
+                            self._token = f"Bearer {access_token}"
+                            self._token_time = time.time()
+                            logger.info("🔑 Token 获取成功")
+                            return self._token
+                except Exception:
+                    if attempt < 2:
+                        time.sleep(1)
+            
+            logger.warning("⚠ 使用备用 Token")
             return f"Bearer {self.config.token}" if self.config.token else ""
-        
-        for attempt in range(3):
-            try:
-                login_data = {
-                    "email": self.config.username,
-                    "password": self.config.password
-                }
-                headers = {
-                    "User-Agent": "Mozilla/5.0",
-                    "Content-Type": "application/json",
-                }
-                
-                r = requests.post(self.config.login_url, json=login_data, headers=headers, timeout=15)
-                data = r.json()
-                
-                if data.get("code") == 0:
-                    token_data = data.get("data", {}).get("token", {})
-                    access_token = token_data.get("access_token")
-                    if access_token:
-                        self._token = f"Bearer {access_token}"
-                        self._token_time = time.time()
-                        logger.info("🔑 Token 获取成功")
-                        return self._token
-            except Exception:
-                if attempt < 2:
-                    time.sleep(1)
-        
-        logger.warning("⚠ 使用备用 Token")
-        return f"Bearer {self.config.token}" if self.config.token else ""
 
 
 class Downloader:
@@ -138,18 +156,20 @@ class Downloader:
                 url, found_path = result
                 logger.debug(f"找到文件，路径: {found_path}")
                 
-                # 下载文件
+                # 下载文件（连接超时30秒，读取超时120秒）
                 download_headers = {"User-Agent": "Mozilla/5.0"}
-                with requests.get(url, headers=download_headers, stream=True, timeout=600) as r:
+                with requests.get(url, headers=download_headers, stream=True, timeout=(30, 120)) as r:
                     r.raise_for_status()
                     total_size = int(r.headers.get('content-length', 0))
                     
                     with open(temp_file, 'wb') as f:
                         downloaded = 0
-                        for chunk in r.iter_content(chunk_size=8192):
+                        last_progress_time = time.time()
+                        for chunk in r.iter_content(chunk_size=65536):  # 增大块大小提高效率
                             if chunk:
                                 f.write(chunk)
                                 downloaded += len(chunk)
+                                last_progress_time = time.time()
                                 if progress_callback and total_size > 0:
                                     progress_callback(downloaded, total_size)
                 
