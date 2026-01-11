@@ -1,13 +1,14 @@
-# Annotation Checker 依赖
+# AnnotaPipe 依赖
+# 安装: pip install -r requirements.txt
 
-# HTTP 请求
+# HTTP 请求（下载文件、飞书 API）
 requests>=2.28.0
 
 # YAML 配置解析
 pyyaml>=6.0
 
-# SSH/SFTP 客户端
+# SSH/SFTP 客户端（远程服务器操作）
 paramiko>=3.0.0
 
-# 数值计算
+# 数值计算（标注检查）
 numpy>=1.21.0
