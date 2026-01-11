@@ -1,6 +1,6 @@
 # 配置文件说明
 
-本目录包含 annotation_checker 项目的所有配置文件。
+本目录包含 AnnotaPipe 项目的所有配置文件。
 
 ## 📁 文件结构
 
