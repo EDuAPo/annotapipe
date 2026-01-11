@@ -33,12 +33,14 @@ dataweave:
   base_url: "https://dataweave.enableai.cn/api/v4"
   # username/password 通过环境变量 DATAWEAVE_USERNAME/DATAWEAVE_PASSWORD 设置
   
-  # 文件搜索路径模板（按优先级排序）
+  # 文件搜索路径模板（按优先级排序，或逻辑：依次尝试直到找到）
   path_templates:
+    - "dataweave://my/TO_RERE/已上传平台/2025_1121/{filename}"
+    - "dataweave://my/TO_RERE/12-9/temp/{filename}"
+    - "dataweave://my/TO_RERE/未上传平台/{filename}"
     - "dataweave://my/TO_RERE/盲区数据/{filename}"
     - "dataweave://my/TO_RERE/7Lidar_data/{filename}"
     - "dataweave://my/TO_RERE/已上传平台/{filename}"
-    - "dataweave://my/TO_RERE/未上传平台/{filename}"
     - "dataweave://my/TO_RERE/剔除非关键帧&重新上传/{filename}"
     - "dataweave://my/TO_RERE/12-9/{filename}"
 
@@ -70,7 +72,7 @@ concurrency:
   max_workers: 3
   
   # 下载并发数
-  download_workers: 5
+  download_workers: 3
   
   # 批处理大小
   batch_size: 20

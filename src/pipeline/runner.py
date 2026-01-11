@@ -3,6 +3,7 @@
 负责编排整个处理流程，支持串行/并行模式
 """
 import sys
+import time
 import logging
 import threading
 from pathlib import Path
@@ -195,14 +196,16 @@ class PipelineRunner:
             ssh.mkdir_p(ssh.server.zip_dir)
             ssh.mkdir_p(ssh.server.process_dir)
             
-            # 清理残留的临时文件（上次异常中断可能留下的）
-            cleaned = ssh.cleanup_uploading_files(ssh.server.zip_dir)
-            if cleaned > 0:
-                print(f"  🧹 清理残留临时文件: {cleaned} 个")
+            # 注意：不再自动清理临时文件，以支持断点续传
+            # 如需清理，请手动调用 uploader.cleanup_incomplete(force=True)
             
             # 获取服务器状态
             state = processor.get_server_state()
-            print(f"  📊 服务器状态: {len(state['zip_files'])} ZIPs / {len(state['processed_dirs'])} 已完成")
+            print(f"  📊 服务器: {len(state['zip_files'])} ZIPs / {len(state['processed_dirs'])} 已完成")
+            
+            # 统计本地已下载的文件（只统计数量，不验证完整性）
+            local_zip_files = list(self.local_zip_dir.glob("*.zip"))
+            print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
             
             # 过滤需要处理的文件
             files_to_process = []
@@ -220,7 +223,7 @@ class PipelineRunner:
             
             skipped = len(json_files) - len(files_to_process)
             if skipped > 0:
-                print(f"  ⏭ 跳过已完成: {skipped} 个")
+                print(f"  ⏭ 跳过(服务器已完成): {skipped} 个")
             
             if not files_to_process:
                 print("  ✓ 所有文件都已处理完成")
@@ -229,7 +232,15 @@ class PipelineRunner:
                 self._track_to_feishu()
                 return self.result
             
-            print(f"  📦 待处理: {len(files_to_process)} 个文件")
+            # 计算实际需要下载的数量
+            local_stems = set(f.stem for f in local_zip_files)
+            need_download = 0
+            for json_file, stem in files_to_process:
+                zip_name = f"{stem}.zip"
+                if zip_name not in state['zip_files'] and stem not in local_stems:
+                    need_download += 1
+            
+            print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
             print(f"  🧵 并发数: {workers}")
             print()
             
@@ -257,44 +268,119 @@ class PipelineRunner:
         print("=" * 50)
         
         files_to_download = []
+        skipped_local = 0
+        skipped_server = 0
         for json_file, stem in files:
             zip_name = f"{stem}.zip"
             local_zip = self.local_zip_dir / zip_name
             
             if zip_name in state['zip_files']:
                 self.result.skipped_server_exists.append(stem)
+                skipped_server += 1
                 continue
-            if self.downloader.is_valid_zip(local_zip):
+            # 只检查文件存在且大小>0，不验证完整性（避免卡顿）
+            if local_zip.exists() and local_zip.stat().st_size > 0:
                 self.result.downloaded.append(stem)
+                skipped_local += 1
                 continue
             files_to_download.append((stem, zip_name, local_zip))
         
+        if skipped_server > 0 or skipped_local > 0:
+            print(f"  跳过: 服务器已有 {skipped_server} 个, 本地已有 {skipped_local} 个")
+        
         if files_to_download:
-            print(f"  需下载: {len(files_to_download)} 个文件")
-            progress = ProgressTracker(len(files_to_download), "下载进度")
+            print(f"  需下载: {len(files_to_download)} 个文件 (并发: {workers})")
             
-            with ThreadPoolExecutor(max_workers=self.config.download_workers) as executor:
-                futures = {}
-                for stem, zip_name, local_zip in files_to_download:
-                    future = executor.submit(self.downloader.download_file, zip_name, local_zip)
-                    futures[future] = stem
+            # 预先获取 token，避免在进度条显示期间输出日志
+            self.downloader.token_manager.get_token()
+            
+            # 尝试使用 tqdm 进度条
+            try:
+                from tqdm import tqdm
+                use_tqdm = True
+            except ImportError:
+                use_tqdm = False
+            
+            # 并行下载
+            download_status = {}  # stem -> status
+            status_lock = threading.Lock()
+            active_downloads = {}  # stem -> (downloaded, total)
+            
+            if use_tqdm:
+                # 单进度条：显示文件数 + 下载流量
+                file_pbar = tqdm(total=len(files_to_download), desc="  下载进度", 
+                                unit="个", ncols=80, leave=True)
+                total_bytes = [0]
+                downloaded_bytes = [0]
+                last_update = [time.time()]
+                start_time = [time.time()]
+                
+                def make_progress_callback(stem):
+                    def callback(downloaded, total):
+                        with status_lock:
+                            if stem not in active_downloads:
+                                active_downloads[stem] = (0, total)
+                                if total > 0:
+                                    total_bytes[0] += total
+                            old_downloaded, _ = active_downloads[stem]
+                            delta = downloaded - old_downloaded
+                            if delta > 0:
+                                active_downloads[stem] = (downloaded, total)
+                                downloaded_bytes[0] += delta
+                                # 限制刷新频率，避免闪烁
+                                now = time.time()
+                                if now - last_update[0] > 0.2:
+                                    last_update[0] = now
+                                    # 计算下载速度
+                                    elapsed = now - start_time[0]
+                                    speed = downloaded_bytes[0] / elapsed / 1024 / 1024 if elapsed > 0 else 0
+                                    file_pbar.set_postfix_str(f"{downloaded_bytes[0]/1024/1024:.0f}MB {speed:.1f}MB/s", refresh=True)
+                    return callback
+            else:
+                make_progress_callback = lambda stem: None
+            
+            def download_task(stem, zip_name, local_zip):
+                try:
+                    progress_cb = make_progress_callback(stem)
+                    success = self.downloader.download_file(zip_name, local_zip, progress_callback=progress_cb)
+                    with status_lock:
+                        download_status[stem] = success
+                    return stem, success
+                except Exception as e:
+                    with status_lock:
+                        download_status[stem] = False
+                    logger.error(f"下载异常 {stem}: {e}")
+                    return stem, False
+            
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(download_task, stem, zip_name, local_zip) 
+                          for stem, zip_name, local_zip in files_to_download]
                 
                 for future in as_completed(futures):
-                    stem = futures[future]
-                    try:
-                        success = future.result()
-                        with self._lock:
-                            if success:
-                                self.result.downloaded.append(stem)
-                            else:
-                                self.result.download_failed.append(stem)
-                        progress.update(success=success, name=stem)
-                    except Exception:
-                        with self._lock:
-                            self.result.download_failed.append(stem)
-                        progress.update(success=False, name=f"{stem} (异常)")
+                    stem, success = future.result()
+                    if use_tqdm:
+                        file_pbar.update(1)
+                        status = "✓" if success else "✗"
+                        file_pbar.set_postfix_str(f"{status} {stem[:20]}")
+                    else:
+                        status = "✓" if success else "✗"
+                        sys.stdout.write(f'\r\033[K  [{len(download_status)}/{len(futures)}] {status} {stem[:40]}')
+                        sys.stdout.flush()
+                    
+                    if success:
+                        self.result.downloaded.append(stem)
+                    else:
+                        self.result.download_failed.append(stem)
             
-            progress.summary()
+            if use_tqdm:
+                file_pbar.close()
+            else:
+                print()
+            
+            # 下载汇总
+            success_count = len(self.result.downloaded) - skipped_local
+            fail_count = len(self.result.download_failed)
+            print(f"  📊 下载完成: ✓ {success_count}  ✗ {fail_count}")
         else:
             print("  所有文件已下载或服务器已存在")
         
@@ -310,10 +396,25 @@ class PipelineRunner:
             print("  没有需要处理的文件")
             return
         
-        progress = ProgressTracker(len(files_for_server), "服务器处理")
+        # 计算实际需要上传的文件数量（排除服务器已有ZIP的）
+        need_upload_count = sum(1 for jf, stem in files_for_server 
+                                if f"{stem}.zip" not in state['zip_files'] 
+                                and (self.local_zip_dir / f"{stem}.zip").exists())
         
-        for json_file, stem in files_for_server:
-            success = self._process_single(ssh, processor, json_file, stem, state)
+        print(f"  待处理: {len(files_for_server)} 个 (需上传: {need_upload_count} 个)")
+        
+        progress = ProgressTracker(len(files_for_server), "服务器处理")
+        upload_idx = 0
+        
+        for idx, (json_file, stem) in enumerate(files_for_server, 1):
+            zip_name = f"{stem}.zip"
+            # 判断是否需要上传
+            need_upload = zip_name not in state['zip_files'] and (self.local_zip_dir / zip_name).exists()
+            if need_upload:
+                upload_idx += 1
+                success = self._process_single(ssh, processor, json_file, stem, state, upload_idx, need_upload_count)
+            else:
+                success = self._process_single(ssh, processor, json_file, stem, state, 0, 0)
             progress.update(success=success, name=stem)
         
         progress.summary()
@@ -351,32 +452,39 @@ class PipelineRunner:
                        files: List[tuple], state: Dict):
         """流式模式：下载一个处理一个"""
         progress = ProgressTracker(len(files), "流式处理")
+        total_count = len(files)
         
-        for json_file, stem in files:
-            success = self._process_single(ssh, processor, json_file, stem, state)
+        for idx, (json_file, stem) in enumerate(files, 1):
+            success = self._process_single(ssh, processor, json_file, stem, state, idx, total_count)
             progress.update(success=success, name=stem)
         
         progress.summary()
     
     def _process_single(self, ssh: SSHClient, processor: RemoteProcessor,
-                        json_file: Path, stem: str, state: Dict) -> bool:
+                        json_file: Path, stem: str, state: Dict,
+                        current_idx: int = 0, total_count: int = 0) -> bool:
         """处理单个文件（使用共享SSH连接）"""
         zip_name = f"{stem}.zip"
         local_zip = self.local_zip_dir / zip_name
         server = ssh.server
         remote_zip = f"{server.zip_dir}/{zip_name}"
         
+        # 进度前缀
+        progress_prefix = f"[{current_idx}/{total_count}] " if total_count > 0 else ""
+        
         try:
             # 检查是否可以从中间状态恢复
-            current_status = self.state_manager.get_status(stem)
             skip_download = self.state_manager.can_skip_download(stem)
             skip_upload = self.state_manager.can_skip_upload(stem)
             
             # 检查 process_dir 中是否已有解压的数据
             in_processing = stem in state.get('processing_dirs', set())
             
-            # 下载
-            if not skip_download and zip_name not in state['zip_files'] and not self.downloader.is_valid_zip(local_zip):
+            # 检查本地文件是否存在（不验证完整性，避免卡顿）
+            local_exists = local_zip.exists() and local_zip.stat().st_size > 0
+            
+            # 下载（只在本地不存在且服务器也没有时才下载）
+            if not skip_download and zip_name not in state['zip_files'] and not local_exists:
                 if not self.downloader.download_file(zip_name, local_zip):
                     self.result.log_error(stem, "下载", "下载失败")
                     self.result.check_failed.append(stem)
@@ -387,11 +495,29 @@ class PipelineRunner:
             
             # 上传
             if not skip_upload and zip_name not in state['zip_files'] and local_zip.exists():
-                if not ssh.upload_file(str(local_zip), remote_zip):
+                # 创建上传进度回调
+                file_size = local_zip.stat().st_size
+                upload_start = [time.time()]
+                last_print = [0]
+                
+                def upload_progress(transferred, total):
+                    now = time.time()
+                    if now - last_print[0] < 0.3:  # 限制刷新频率
+                        return
+                    last_print[0] = now
+                    elapsed = now - upload_start[0]
+                    speed = transferred / elapsed / 1024 / 1024 if elapsed > 0 else 0
+                    percent = transferred / total * 100 if total > 0 else 0
+                    sys.stdout.write(f'\r\033[K  {progress_prefix}⬆ 上传 {stem[:20]}: {transferred/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
+                    sys.stdout.flush()
+                
+                if not ssh.upload_file(str(local_zip), remote_zip, progress_callback=upload_progress):
+                    print()  # 换行
                     self.result.log_error(stem, "上传", "上传失败")
                     self.result.check_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, "上传失败")
                     return False
+                print()  # 换行
                 self.result.uploaded.append(stem)
                 self.state_manager.update(stem, ProcessStatus.UPLOADED)
             

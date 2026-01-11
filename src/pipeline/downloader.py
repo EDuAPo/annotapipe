@@ -43,12 +43,16 @@ class TokenManager:
     def get_token(self, force_refresh: bool = False) -> str:
         """获取有效的 Token（线程安全）"""
         with self._token_lock:
+            # 检查是否有有效 token
             if not force_refresh and self._token and self._token_time:
                 if time.time() - self._token_time < self._max_age:
                     return self._token
             
             if not self.config.username or not self.config.password:
                 return f"Bearer {self.config.token}" if self.config.token else ""
+            
+            # 记录是否是首次获取
+            is_first = self._token is None
             
             for attempt in range(3):
                 try:
@@ -70,7 +74,9 @@ class TokenManager:
                         if access_token:
                             self._token = f"Bearer {access_token}"
                             self._token_time = time.time()
-                            logger.info("🔑 Token 获取成功")
+                            # 只在首次获取时打印日志
+                            if is_first:
+                                logger.info("🔑 Token 获取成功")
                             return self._token
                 except Exception:
                     if attempt < 2:
@@ -101,19 +107,20 @@ class Downloader:
     
     def get_download_url(self, filename: str, headers: Dict[str, str]) -> Optional[Tuple[str, str]]:
         """获取文件的下载 URL，返回 (url, found_path)"""
-        for template in self.config.path_templates:
+        for i, template in enumerate(self.config.path_templates):
             dw_path = template.format(filename=filename)
             payload = {"uris": [dw_path]}
+            path_name = template.split("/")[-2]
             
             try:
-                r = requests.post(self.config.api_url, json=payload, headers=headers, timeout=15)
-                r.raise_for_status()
+                r = requests.post(self.config.api_url, json=payload, headers=headers, timeout=8)
                 data = r.json()
                 
                 if data.get("code") != 0:
                     msg = data.get("msg", "")
                     if "Login required" in msg or data.get("code") == 401:
                         return None  # Token 过期
+                    # 文件不存在于此路径，继续尝试下一个
                     continue
                 
                 url_data = data.get("data", {})
@@ -122,8 +129,10 @@ class Downloader:
                     if urls_list and isinstance(urls_list[0], dict):
                         url = urls_list[0].get("url")
                         if url:
-                            found_path = template.split("/")[-2]
-                            return url, found_path
+                            return url, path_name
+            except requests.exceptions.Timeout:
+                logger.warning(f"API 超时 ({path_name})")
+                continue
             except Exception:
                 continue
         
@@ -141,65 +150,57 @@ class Downloader:
             "Authorization": token,
         }
         
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 result = self.get_download_url(filename, headers)
                 
                 if result is None:
-                    # Token 可能过期，刷新后重试
-                    if attempt < 2:
+                    if attempt == 0:
                         token = self.token_manager.get_token(force_refresh=True)
                         headers["Authorization"] = token
                         continue
+                    logger.warning(f"无法获取下载URL: {filename}")
                     return False
                 
                 url, found_path = result
-                logger.debug(f"找到文件，路径: {found_path}")
                 
-                # 下载文件（连接超时30秒，读取超时120秒）
                 download_headers = {"User-Agent": "Mozilla/5.0"}
-                with requests.get(url, headers=download_headers, stream=True, timeout=(30, 120)) as r:
+                with requests.get(url, headers=download_headers, stream=True, timeout=(15, 60)) as r:
                     r.raise_for_status()
                     total_size = int(r.headers.get('content-length', 0))
                     
                     with open(temp_file, 'wb') as f:
                         downloaded = 0
-                        last_progress_time = time.time()
-                        for chunk in r.iter_content(chunk_size=65536):  # 增大块大小提高效率
+                        for chunk in r.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)
                                 downloaded += len(chunk)
-                                last_progress_time = time.time()
-                                if progress_callback and total_size > 0:
+                                if progress_callback:
                                     progress_callback(downloaded, total_size)
                 
                 # 验证完整性
                 if total_size > 0:
                     actual_size = temp_file.stat().st_size
                     if actual_size != total_size:
-                        logger.error(f"下载不完整: 预期 {total_size}, 实际 {actual_size}")
+                        logger.warning(f"下载不完整: 预期 {total_size}, 实际 {actual_size} - {filename}")
                         temp_file.unlink()
-                        if attempt < 2:
-                            time.sleep(2)
-                            continue
-                        return False
+                        continue
                 
-                # 重命名为正式文件
                 if target_path.exists():
                     target_path.unlink()
                 temp_file.rename(target_path)
                 return True
                 
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                logger.warning(f"网络错误: {e}")
+                logger.warning(f"网络错误 (尝试 {attempt+1}/2): {type(e).__name__} - {filename}")
                 if temp_file.exists():
                     temp_file.unlink()
-                if attempt < 2:
-                    time.sleep(2 * (attempt + 1))
+                if attempt == 0:
+                    time.sleep(1)
                     continue
                 return False
             except Exception as e:
-                logger.error(f"下载失败: {e}")
+                logger.error(f"下载异常: {type(e).__name__}: {str(e)[:100]} - {filename}")
                 if temp_file.exists():
                     temp_file.unlink()
                 return False

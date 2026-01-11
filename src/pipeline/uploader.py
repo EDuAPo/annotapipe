@@ -32,9 +32,16 @@ class Uploader:
         
         return files
     
-    def upload_file(self, local_path: Path, progress_callback=None) -> Tuple[bool, str]:
+    def upload_file(self, local_path: Path, progress_callback=None, 
+                    verify: bool = True) -> Tuple[bool, str]:
         """
-        上传单个文件到服务器
+        上传单个文件到服务器（支持断点续传 + 分块校验）
+        
+        Args:
+            local_path: 本地文件路径
+            progress_callback: 进度回调
+            verify: 是否验证完整性（默认启用，确保数据完整性）
+        
         返回 (success, error_message)
         """
         server = self.ssh.server
@@ -43,12 +50,18 @@ class Uploader:
         if not local_path.exists():
             return False, f"本地文件不存在: {local_path}"
         
-        success = self.ssh.upload_file(str(local_path), remote_path, progress_callback)
+        # 大文件使用断点续传 + 分块校验确保数据完整性
+        success = self.ssh.upload_file(
+            str(local_path), remote_path, 
+            progress_callback=progress_callback,
+            verify=verify,
+            resume=True
+        )
         
         if success:
             return True, ""
         else:
-            return False, "上传失败"
+            return False, "上传失败（临时文件已保留，下次可断点续传）"
     
     def upload_batch(self, files: List[Path], 
                      skip_existing: bool = True,
@@ -79,8 +92,16 @@ class Uploader:
         
         return results
     
-    def cleanup_incomplete(self):
-        """清理服务器上不完整的上传文件（.uploading 临时文件）"""
+    def cleanup_incomplete(self, force: bool = False):
+        """
+        清理服务器上不完整的上传文件（.uploading 临时文件）
+        
+        ⚠️ 警告：这会删除所有临时文件，破坏断点续传功能！
+        只有在确定不需要断点续传时才调用此方法。
+        
+        Args:
+            force: 是否强制清理（不提示警告）
+        """
         server = self.ssh.server
         
         status, out, _ = self.ssh.exec_command(
@@ -90,7 +111,12 @@ class Uploader:
         if out:
             uploading_files = [f.strip() for f in out.splitlines() if f.strip()]
             if uploading_files:
+                if not force:
+                    logger.warning(f"⚠️ 即将清理 {len(uploading_files)} 个临时文件，这会破坏断点续传功能！")
                 logger.info(f"🧹 发现 {len(uploading_files)} 个未完成的上传，正在清理...")
                 for f in uploading_files:
                     self.ssh.exec_command(f"rm -f '{f}'")
                     logger.info(f"  已删除: {Path(f).name}")
+                logger.info(f"✅ 清理完成")
+        else:
+            logger.info(f"✅ 没有需要清理的临时文件")
