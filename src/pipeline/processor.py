@@ -66,15 +66,33 @@ class RemoteProcessor:
         
         # 获取已有的 ZIP 文件
         zip_files = set()
+        processed_zip_stems = set()  # 已处理完成的 ZIP（通过 processed_ 前缀判断）
         files = self.ssh.list_files(server.zip_dir, "*.zip")
         for name in files:
             if name.startswith("processed_"):
-                zip_files.add(name[len("processed_"):])
+                stem = name[len("processed_"):]
+                zip_files.add(stem)
+                processed_zip_stems.add(stem.replace('.zip', ''))
             else:
                 zip_files.add(name)
         
-        # 获取已处理完成的目录
+        # 获取已处理完成的目录（检查当前 final_dir）
         processed_dirs = set(self.ssh.list_dirs(server.final_dir))
+        
+        # 同时检查其他可能的 final_dir（支持多路径）
+        # 这样即使切换了 final_dir，之前处理过的数据也不会被重复处理
+        other_final_dirs = [
+            "/data02/dataset/scenesnew",
+            "/data02/dataset/lines",
+        ]
+        for other_dir in other_final_dirs:
+            if other_dir != server.final_dir:
+                other_processed = self.ssh.list_dirs(other_dir)
+                processed_dirs.update(other_processed)
+        
+        # 同时将 processed_ 前缀的 ZIP 对应的 stem 也加入已完成列表
+        # 这样即使 final_dir 中没有对应目录，也能识别为已处理
+        processed_dirs.update(processed_zip_stems)
         
         # 获取处理中的目录（断点续传支持）
         processing_dirs = set(self.ssh.list_dirs(server.process_dir))
@@ -111,12 +129,8 @@ class RemoteProcessor:
         if status != 0:
             return False, f"处理脚本失败: {err[:200]}"
         
-        # 处理原始 ZIP
-        if self.config.zip_after_process == "rename":
-            new_name = f"{Path(zip_path).parent}/processed_{Path(zip_path).name}"
-            self.ssh.exec_command(f"mv '{zip_path}' '{new_name}'")
-        elif self.config.zip_after_process == "delete":
-            self.ssh.exec_command(f"rm '{zip_path}'")
+        # 注意：ZIP 处理后操作（rename/delete）已移至 move_to_final 中执行
+        # 确保只有在整个流程完成后才处理原始 ZIP，避免重复上传问题
         
         return True, ""
     
@@ -166,10 +180,11 @@ class RemoteProcessor:
         return 0
     
     def move_to_final(self, stem: str) -> Tuple[bool, str]:
-        """移动到最终目录"""
+        """移动到最终目录，并清理原始 ZIP"""
         server = self.ssh.server
         src = f"{server.process_dir}/{stem}"
         dst = f"{server.final_dir}/{stem}"
+        zip_path = f"{server.zip_dir}/{stem}.zip"
         
         # 检查源目录
         if not self.ssh.dir_exists(src):
@@ -184,5 +199,12 @@ class RemoteProcessor:
         
         if status != 0:
             return False, f"移动失败: {err}"
+        
+        # 整个流程完成后，处理原始 ZIP（避免中途失败导致重复上传）
+        if self.config.zip_after_process == "rename":
+            new_name = f"{server.zip_dir}/processed_{stem}.zip"
+            self.ssh.exec_command(f"mv '{zip_path}' '{new_name}'")
+        elif self.config.zip_after_process == "delete":
+            self.ssh.exec_command(f"rm -f '{zip_path}'")
         
         return True, dst

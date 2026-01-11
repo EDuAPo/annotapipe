@@ -12,6 +12,7 @@ servers:
     # password 通过环境变量 SERVER_PRIMARY_PASSWORD 设置
     zip_dir: "/data02/rere_zips"
     process_dir: "/data02/processing"
+    # final_dir 可选值: /data02/dataset/scenesnew, /data02/dataset/lines
     final_dir: "/data02/dataset/scenesnew"
     priority: 1
     enabled: true

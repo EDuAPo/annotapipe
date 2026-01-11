@@ -48,8 +48,15 @@ field_mapping:
   盲区属性: "fld6yDTNc4"
   上传nas: "fldtt8M8si"
   上传data02/dataset/scenesnew: "fldOw27qgJ"
-  上传A100/dataset02/lines: "fldq6i04Yu"
+  上传dataset02/dataset/lines: "fldq6i04Yu"
   更新时间: "fldBF32bL5"
+
+# =============================================================================
+# 当前上传路径配置
+# =============================================================================
+# 用于飞书表格中标记数据上传到哪个服务器路径
+# 可选值: data02/dataset/scenesnew, dataset02/dataset/lines
+current_upload_path: "data02/dataset/scenesnew"
 
 # =============================================================================
 # 数据属性关键词配置

@@ -10,10 +10,42 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 
+import re
+
 import yaml
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_text_value(value) -> str:
+    """从飞书字段值中提取纯文本（处理复杂对象格式）"""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list) and len(value) > 0:
+        first = value[0]
+        if isinstance(first, dict):
+            return first.get('text', '')
+        return str(first)
+    return str(value) if value else ''
+
+
+def extract_time_key(name: str) -> str:
+    """
+    从数据包名称中提取时间段作为模糊匹配键
+    
+    支持的命名格式:
+    - 20251226_165741-165910_rere_0 -> 20251226_165741-165910 (去掉后缀)
+    - 20251124_132834_to_20251124_133029 -> 20251124_132834_to_20251124_133029 (保持不变)
+    - 1209_134548_134748 -> 1209_134548_134748 (保持不变)
+    """
+    # 格式: YYYYMMDD_HHMMSS-HHMMSS_xxx_n -> 提取 YYYYMMDD_HHMMSS-HHMMSS
+    match = re.match(r'^(\d{8}_\d{6}-\d{6})', name)
+    if match:
+        return match.group(1)
+    
+    # 其他格式保持不变
+    return name
 
 
 def _load_env_file(env_path: str = "configs/.env"):
@@ -106,6 +138,8 @@ class FeishuTracker(BaseTracker):
         self._token: Optional[str] = None
         self._token_time: Optional[float] = None
         self._available = False
+        self._records_cache: Optional[Dict[str, Dict]] = None  # 缓存所有记录
+        self._cache_time: Optional[float] = None
         self._init_config()
     
     def _init_config(self):
@@ -166,37 +200,97 @@ class FeishuTracker(BaseTracker):
             "Content-Type": "application/json"
         }
     
-    def _search_record(self, name: str) -> Optional[str]:
-        """根据数据包名称搜索记录，返回 record_id"""
+    def _load_all_records(self, force_reload: bool = False) -> Dict[str, Dict]:
+        """加载所有记录到缓存，返回 {数据包名称: {record_id, fields}}"""
+        # 禁用缓存，每次都重新加载
+        if not force_reload and self._records_cache is not None:
+            return self._records_cache
+        
         app_token = self.config.get('app_token', '')
         table_id = self.config.get('table_id', '')
+        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records"
         
-        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/search"
-        payload = {
-            "filter": {
-                "conjunction": "and",
-                "conditions": [{
-                    "field_name": "数据包名称",
-                    "operator": "is",
-                    "value": [name]
-                }]
-            },
-            "page_size": 1
-        }
+        all_records = {}
+        page_token = None
+        page_count = 0
         
-        try:
-            r = requests.post(url, json=payload, headers=self._get_headers(), timeout=15)
-            data = r.json()
-            if data.get('code') == 0:
+        logger.info(f"📥 加载飞书表格所有记录... (app_token={app_token}, table_id={table_id})")
+        
+        while True:
+            params = {"page_size": 500}
+            if page_token:
+                params["page_token"] = page_token
+            
+            try:
+                r = requests.get(url, params=params, headers=self._get_headers(), timeout=30)
+                data = r.json()
+                
+                if data.get('code') != 0:
+                    logger.error(f"加载记录失败: code={data.get('code')}, msg={data.get('msg')}")
+                    break
+                
                 items = data.get('data', {}).get('items', [])
-                if items:
-                    return items[0].get('record_id')
-        except Exception:
-            pass
+                for item in items:
+                    record_id = item.get('record_id')
+                    fields = item.get('fields', {})
+                    name = _extract_text_value(fields.get('数据包名称', ''))
+                    if name and record_id:
+                        all_records[name] = {
+                            'record_id': record_id,
+                            'fields': fields
+                        }
+                
+                page_count += 1
+                page_token = data.get('data', {}).get('page_token')
+                if not page_token or not data.get('data', {}).get('has_more'):
+                    break
+                    
+            except Exception as e:
+                logger.error(f"加载记录异常: {e}")
+                break
+        
+        logger.info(f"📥 已加载 {len(all_records)} 条记录 ({page_count} 页)")
+        if all_records:
+            # 打印前3条记录的名称，帮助确认是否是正确的表格
+            sample_names = list(all_records.keys())[:3]
+            logger.info(f"📥 示例记录: {sample_names}")
+        
+        self._records_cache = all_records
+        self._cache_time = time.time()
+        return all_records
+    
+    def _search_record(self, name: str) -> Optional[Dict]:
+        """根据数据包名称搜索记录，返回 {record_id, fields} 或 None
+        
+        匹配策略：
+        1. 先从缓存中精确匹配
+        2. 如果没找到，再从缓存中模糊匹配（time_key）
+        """
+        # 加载所有记录到缓存
+        all_records = self._load_all_records()
+        
+        # 提取时间段作为匹配键
+        time_key = extract_time_key(name)
+        
+        # 1. 精确匹配
+        if name in all_records:
+            logger.info(f"  ✓ 精确匹配: {name}")
+            return all_records[name]
+        
+        # 2. 模糊匹配：查找包含 time_key 的记录
+        for existing_name, record in all_records.items():
+            if time_key in existing_name or existing_name in name:
+                logger.info(f"  ✓ 模糊匹配: {name} -> {existing_name}")
+                return record
+        
+        logger.info(f"  ✗ 未找到: {name} (将新增)")
         return None
     
-    def _batch_create_records(self, records_fields: List[Dict]) -> int:
-        """批量创建记录"""
+    def _batch_create_records(self, records_fields: List[Dict]) -> tuple:
+        """批量创建记录，返回 (创建数量, 创建的记录列表)"""
+        if not records_fields:
+            return 0, []
+        
         app_token = self.config.get('app_token', '')
         table_id = self.config.get('table_id', '')
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_create"
@@ -206,25 +300,49 @@ class FeishuTracker(BaseTracker):
             r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
             data = r.json()
             if data.get('code') == 0:
-                return len(data.get('data', {}).get('records', []))
+                created_records = data.get('data', {}).get('records', [])
+                created = len(created_records)
+                # 打印创建的记录详情
+                for rec in created_records:
+                    rec_id = rec.get('record_id', 'N/A')
+                    name = rec.get('fields', {}).get('数据包名称', 'N/A')
+                    logger.info(f"  ✓ 已创建: {name} (record_id={rec_id})")
+                return created, created_records
+            else:
+                logger.error(f"批量创建失败: code={data.get('code')}, msg={data.get('msg')}")
         except Exception as e:
-            logger.error(f"批量创建失败: {e}")
-        return 0
+            logger.error(f"批量创建异常: {e}")
+        return 0, []
     
     def _batch_update_records(self, records: List[Dict]) -> int:
         """批量更新记录"""
+        if not records:
+            return 0
+        
         app_token = self.config.get('app_token', '')
         table_id = self.config.get('table_id', '')
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_update"
         
+        # 直接使用字段名称
         payload = {"records": records}
+        logger.info(f"📝 更新请求: record_id={records[0]['record_id'] if records else 'N/A'}, fields={records[0]['fields'] if records else {}}")
         try:
             r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
             data = r.json()
+            logger.info(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}, data={data.get('data', {})}")
             if data.get('code') == 0:
-                return len(records)
+                updated_records = data.get('data', {}).get('records', [])
+                for rec in updated_records:
+                    rec_id = rec.get('record_id', 'N/A')
+                    name = rec.get('fields', {}).get('数据包名称', 'N/A')
+                    logger.info(f"  ✓ 已更新: {name} (record_id={rec_id})")
+                return len(updated_records)
+            else:
+                logger.error(f"批量更新失败: code={data.get('code')}, msg={data.get('msg')}")
+                if records:
+                    logger.error(f"更新记录示例: {records[0]}")
         except Exception as e:
-            logger.error(f"批量更新失败: {e}")
+            logger.error(f"批量更新异常: {e}")
         return 0
     
     def detect_attributes(self, json_dir: str) -> List[str]:
@@ -246,8 +364,15 @@ class FeishuTracker(BaseTracker):
             logger.warning("飞书追踪器不可用，跳过")
             return {}
         
+        # 强制重新加载记录，确保缓存是最新的
+        self._load_all_records(force_reload=True)
+        
         attributes = self.detect_attributes(json_dir) if json_dir else []
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 获取当前路径标识（用于路径列）
+        current_path = self.config.get('current_upload_path', 'data02/dataset/scenesnew')
+        path_field = f'上传{current_path}'
+        field_mapping = self.config.get('field_mapping', {})
         
         to_create = []
         to_update = []
@@ -255,33 +380,71 @@ class FeishuTracker(BaseTracker):
         updated_names = []
         total_keyframes = 0
         
+        logger.info(f"📋 开始处理 {len(records)} 条记录...")
+        
         for rec in records:
             total_keyframes += rec.keyframe_count
             
-            fields = {
-                "数据包名称": rec.name,
-                "标注情况": rec.annotation_status,
-                "关键帧数": rec.keyframe_count,
-                "更新时间": now,
-            }
-            
-            # 添加属性
-            for attr in attributes:
-                attr_field = f"{attr}属性"
-                if attr_field in self.config.get('field_mapping', {}):
-                    fields[attr_field] = True
-            
-            # 上传状态
-            if rec.uploaded:
-                fields['上传data02/dataset/scenesnew'] = True
-            
             # 查找是否已存在
-            record_id = self._search_record(rec.name)
+            logger.info(f"🔍 搜索记录: {rec.name}")
+            existing = self._search_record(rec.name)
             
-            if record_id:
-                to_update.append({"record_id": record_id, "fields": fields})
+            # 注意：飞书多维表格的字段类型
+            # 只更新复选框类型的属性/路径字段
+            fields = {}
+            
+            if existing:
+                # 更新模式：更新关键帧数、标注情况、更新时间和属性/路径
+                existing_fields = existing.get('fields', {})
+                
+                # 更新关键帧数、标注情况、更新时间（注意字段类型）
+                # 关键帧数是文本类型，需要字符串
+                # 标注情况是多选类型，需要数组
+                # 更新时间是日期时间类型，需要毫秒时间戳
+                fields["关键帧数"] = str(rec.keyframe_count)
+                fields["标注情况"] = [rec.annotation_status]
+                fields["更新时间"] = int(time.time() * 1000)
+                
+                # 属性列：保留已有的 True 值 + 新增当前属性
+                for attr_name in field_mapping.keys():
+                    if attr_name.endswith('属性'):
+                        if existing_fields.get(attr_name):
+                            fields[attr_name] = True
+                
+                # 新增当前检测到的属性
+                for attr in attributes:
+                    attr_field = f"{attr}属性"
+                    if attr_field in field_mapping:
+                        fields[attr_field] = True
+                
+                # 路径列：保留已有的 True 值 + 新增当前路径
+                for field_name in field_mapping.keys():
+                    if field_name.startswith('上传'):
+                        if existing_fields.get(field_name):
+                            fields[field_name] = True
+                
+                # 新增当前路径
+                if rec.uploaded and path_field in field_mapping:
+                    fields[path_field] = True
+                
+                to_update.append({"record_id": existing['record_id'], "fields": fields})
                 updated_names.append(rec.name)
             else:
+                # 创建模式：设置名称、关键帧数、标注情况、更新时间和复选框字段
+                # 注意字段类型：关键帧数是文本，标注情况是多选数组，更新时间是毫秒时间戳
+                fields["数据包名称"] = rec.name
+                fields["关键帧数"] = str(rec.keyframe_count)
+                fields["标注情况"] = [rec.annotation_status]
+                fields["更新时间"] = int(time.time() * 1000)
+                
+                for attr in attributes:
+                    attr_field = f"{attr}属性"
+                    if attr_field in field_mapping:
+                        fields[attr_field] = True
+                
+                if rec.uploaded and path_field in field_mapping:
+                    fields[path_field] = True
+                
                 to_create.append(fields)
                 created_names.append(rec.name)
         
@@ -291,7 +454,16 @@ class FeishuTracker(BaseTracker):
         
         for i in range(0, len(to_create), 500):
             batch = to_create[i:i+500]
-            created_count += self._batch_create_records(batch)
+            count, created_records = self._batch_create_records(batch)
+            created_count += count
+            # 更新缓存，避免后续重复创建
+            for rec in created_records:
+                name = rec.get('fields', {}).get('数据包名称')
+                if name and self._records_cache is not None:
+                    self._records_cache[name] = {
+                        'record_id': rec.get('record_id'),
+                        'fields': rec.get('fields', {})
+                    }
             if i + 500 < len(to_create):
                 time.sleep(0.5)
         

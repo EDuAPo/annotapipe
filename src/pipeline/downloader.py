@@ -6,6 +6,7 @@ import time
 import logging
 import zipfile
 import threading
+import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 import requests
@@ -105,6 +106,27 @@ class Downloader:
         except (zipfile.BadZipFile, OSError, IOError):
             return False
     
+    def _verify_zip_integrity(self, zip_path: Path) -> bool:
+        """
+        验证 ZIP 文件完整性
+        检查 ZIP 文件结构是否完整（End-of-central-directory 签名）
+        """
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                # testzip() 会检查所有文件的 CRC
+                # 返回第一个损坏文件的名称，如果没有损坏则返回 None
+                bad_file = zf.testzip()
+                if bad_file is not None:
+                    logger.warning(f"ZIP 文件中存在损坏的文件: {bad_file}")
+                    return False
+                return True
+        except zipfile.BadZipFile as e:
+            logger.warning(f"无效的 ZIP 文件: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"ZIP 验证异常: {e}")
+            return False
+    
     def get_download_url(self, filename: str, headers: Dict[str, str]) -> Optional[Tuple[str, str]]:
         """获取文件的下载 URL，返回 (url, found_path)"""
         for i, template in enumerate(self.config.path_templates):
@@ -139,8 +161,16 @@ class Downloader:
         return None
     
     def download_file(self, filename: str, target_path: Path, 
-                      progress_callback=None) -> bool:
-        """下载单个文件"""
+                      progress_callback=None, resume: bool = True) -> bool:
+        """
+        下载单个文件（支持断点续传）
+        
+        Args:
+            filename: 文件名
+            target_path: 目标路径
+            progress_callback: 进度回调 (downloaded, total)
+            resume: 是否启用断点续传
+        """
         temp_file = target_path.with_suffix('.zip.tmp')
         
         token = self.token_manager.get_token()
@@ -164,13 +194,36 @@ class Downloader:
                 
                 url, found_path = result
                 
+                # 检查是否可以断点续传
+                downloaded = 0
                 download_headers = {"User-Agent": "Mozilla/5.0"}
+                
+                if resume and temp_file.exists():
+                    downloaded = temp_file.stat().st_size
+                    if downloaded > 0:
+                        download_headers["Range"] = f"bytes={downloaded}-"
+                
                 with requests.get(url, headers=download_headers, stream=True, timeout=(15, 60)) as r:
-                    r.raise_for_status()
-                    total_size = int(r.headers.get('content-length', 0))
-                    
-                    with open(temp_file, 'wb') as f:
+                    # 检查服务器是否支持断点续传
+                    if r.status_code == 206:  # Partial Content
+                        # 服务器支持断点续传
+                        content_range = r.headers.get('content-range', '')
+                        if content_range:
+                            # 格式: bytes start-end/total
+                            total_size = int(content_range.split('/')[-1])
+                        else:
+                            total_size = downloaded + int(r.headers.get('content-length', 0))
+                        mode = 'ab'  # 追加模式
+                    elif r.status_code == 200:
+                        # 服务器不支持断点续传，从头开始
+                        total_size = int(r.headers.get('content-length', 0))
                         downloaded = 0
+                        mode = 'wb'  # 覆盖模式
+                    else:
+                        r.raise_for_status()
+                        return False
+                    
+                    with open(temp_file, mode) as f:
                         for chunk in r.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)
@@ -178,13 +231,19 @@ class Downloader:
                                 if progress_callback:
                                     progress_callback(downloaded, total_size)
                 
-                # 验证完整性
+                # 验证完整性 - 第一步：检查文件大小
                 if total_size > 0:
                     actual_size = temp_file.stat().st_size
                     if actual_size != total_size:
                         logger.warning(f"下载不完整: 预期 {total_size}, 实际 {actual_size} - {filename}")
-                        temp_file.unlink()
+                        # 不删除临时文件，下次可以继续
                         continue
+                
+                # 验证完整性 - 第二步：检查 ZIP 文件结构
+                if not self._verify_zip_integrity(temp_file):
+                    logger.warning(f"ZIP 文件损坏，删除临时文件重新下载 - {filename}")
+                    temp_file.unlink()
+                    continue
                 
                 if target_path.exists():
                     target_path.unlink()
@@ -193,16 +252,14 @@ class Downloader:
                 
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 logger.warning(f"网络错误 (尝试 {attempt+1}/2): {type(e).__name__} - {filename}")
-                if temp_file.exists():
-                    temp_file.unlink()
+                # 不删除临时文件，保留断点续传能力
                 if attempt == 0:
                     time.sleep(1)
                     continue
                 return False
             except Exception as e:
                 logger.error(f"下载异常: {type(e).__name__}: {str(e)[:100]} - {filename}")
-                if temp_file.exists():
-                    temp_file.unlink()
+                # 不删除临时文件，保留断点续传能力
                 return False
         
         return False

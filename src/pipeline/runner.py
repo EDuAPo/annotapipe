@@ -207,8 +207,10 @@ class PipelineRunner:
             local_zip_files = list(self.local_zip_dir.glob("*.zip"))
             print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
             
-            # 过滤需要处理的文件
+            # 过滤需要处理的文件，跳过的文件立即同步飞书
             files_to_process = []
+            tracker = Tracker()
+            skipped_stems = []
             for json_file in json_files:
                 stem = json_file.stem
                 if stem in state['processed_dirs']:
@@ -218,8 +220,13 @@ class PipelineRunner:
                     # 获取关键帧数量
                     kf = processor.get_keyframe_count(f"{ssh.server.final_dir}/{stem}")
                     self.result.keyframe_counts[stem] = kf
+                    skipped_stems.append(stem)
                 else:
                     files_to_process.append((json_file, stem))
+            
+            # 跳过的数据包立即同步飞书
+            for stem in skipped_stems:
+                self._track_single_to_feishu(tracker, stem)
             
             skipped = len(json_files) - len(files_to_process)
             if skipped > 0:
@@ -228,8 +235,7 @@ class PipelineRunner:
             if not files_to_process:
                 print("  ✓ 所有文件都已处理完成")
                 self._print_summary()
-                # 飞书追踪：即使全部跳过也要同步
-                self._track_to_feishu()
+                # 注意：跳过的文件已在上面通过 _track_single_to_feishu 同步
                 return self.result
             
             # 计算实际需要下载的数量
@@ -241,7 +247,8 @@ class PipelineRunner:
                     need_download += 1
             
             print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
-            print(f"  🧵 并发数: {workers}")
+            if mode != "streaming":
+                print(f"  🧵 并发数: {workers}")
             print()
             
             if mode == "optimized":
@@ -253,8 +260,8 @@ class PipelineRunner:
         
         self._print_summary()
         
-        # 飞书追踪：记录所有处理过的数据（包括跳过的）
-        self._track_to_feishu()
+        # 注意：飞书同步已在 _track_single_to_feishu 中逐个完成
+        # 不再调用 _track_to_feishu 避免重复同步
         
         return self.result
     
@@ -418,9 +425,8 @@ class PipelineRunner:
                 success = self._process_single(ssh, processor, json_file, stem, state, 0, 0)
             progress.update(success=success, name=stem)
             
-            # 每完成一个数据包立即同步飞书
-            if success and stem in self.result.moved_to_final:
-                self._track_single_to_feishu(tracker, stem)
+            # 每完成一个数据包立即同步飞书（无论成功还是失败）
+            self._track_single_to_feishu(tracker, stem)
         
         progress.summary()
     
@@ -457,16 +463,49 @@ class PipelineRunner:
                        files: List[tuple], state: Dict):
         """流式模式：下载一个处理一个，每完成一个立即同步飞书"""
         progress = ProgressTracker(len(files), "流式处理")
-        total_count = len(files)
         tracker = Tracker()
         
-        for idx, (json_file, stem) in enumerate(files, 1):
-            success = self._process_single(ssh, processor, json_file, stem, state, idx, total_count)
+        # 预计算需要下载和上传的文件
+        local_stems = set(f.stem for f in self.local_zip_dir.glob("*.zip"))
+        need_download_list = []
+        need_upload_list = []
+        
+        for json_file, stem in files:
+            zip_name = f"{stem}.zip"
+            if zip_name not in state['zip_files'] and stem not in local_stems:
+                need_download_list.append(stem)
+            if zip_name not in state['zip_files']:
+                need_upload_list.append(stem)
+        
+        download_idx = 0
+        upload_idx = 0
+        need_download_count = len(need_download_list)
+        need_upload_count = len(need_upload_list)
+        
+        for json_file, stem in files:
+            zip_name = f"{stem}.zip"
+            
+            # 计算当前文件的进度索引
+            need_download = stem in need_download_list
+            need_upload = stem in need_upload_list
+            
+            if need_download:
+                download_idx += 1
+                current_idx = download_idx
+                total_count = need_download_count
+            elif need_upload:
+                upload_idx += 1
+                current_idx = upload_idx
+                total_count = need_upload_count
+            else:
+                current_idx = 0
+                total_count = 0
+            
+            success = self._process_single(ssh, processor, json_file, stem, state, current_idx, total_count)
             progress.update(success=success, name=stem)
             
-            # 每完成一个数据包立即同步飞书
-            if success and stem in self.result.moved_to_final:
-                self._track_single_to_feishu(tracker, stem)
+            # 每完成一个数据包立即同步飞书（无论成功还是失败）
+            self._track_single_to_feishu(tracker, stem)
         
         progress.summary()
     
@@ -495,11 +534,28 @@ class PipelineRunner:
             
             # 下载（只在本地不存在且服务器也没有时才下载）
             if not skip_download and zip_name not in state['zip_files'] and not local_exists:
-                if not self.downloader.download_file(zip_name, local_zip):
+                # 创建下载进度回调
+                download_start = [time.time()]
+                last_print = [0]
+                
+                def download_progress(downloaded, total):
+                    now = time.time()
+                    if now - last_print[0] < 0.3:  # 限制刷新频率
+                        return
+                    last_print[0] = now
+                    elapsed = now - download_start[0]
+                    speed = downloaded / elapsed / 1024 / 1024 if elapsed > 0 else 0
+                    percent = downloaded / total * 100 if total > 0 else 0
+                    sys.stdout.write(f'\r\033[K  {progress_prefix}⬇ 下载 {stem[:20]}: {downloaded/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
+                    sys.stdout.flush()
+                
+                if not self.downloader.download_file(zip_name, local_zip, progress_callback=download_progress):
+                    print()  # 换行
                     self.result.log_error(stem, "下载", "下载失败")
                     self.result.check_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, "下载失败")
                     return False
+                print()  # 换行
                 self.result.downloaded.append(stem)
                 self.state_manager.update(stem, ProcessStatus.DOWNLOADED)
             
@@ -566,9 +622,9 @@ class PipelineRunner:
             success, dst = processor.move_to_final(stem)
             if success:
                 self.result.moved_to_final.append(stem)
-                # 清理本地ZIP
-                if local_zip.exists():
-                    local_zip.unlink()
+                # 注意：暂时不删除本地ZIP文件，保留以便调试
+                # if local_zip.exists():
+                #     local_zip.unlink()
                 # 记录服务器日志
                 if self.server_logger:
                     self.server_logger.log_success(stem, kf)
@@ -675,7 +731,7 @@ class PipelineRunner:
         try:
             kf = self.result.keyframe_counts.get(stem, 0)
             status = "已完成" if stem in self.result.check_passed else "检查不通过"
-            uploaded = stem in self.result.moved_to_final
+            uploaded = stem in self.result.moved_to_final or stem in self.result.skipped_server_exists
             
             record = TrackingRecord(
                 name=stem,
@@ -695,11 +751,13 @@ class PipelineRunner:
         try:
             tracker = Tracker()
             
-            # 收集需要同步的记录（排除流式模式中已同步的）
+            # 收集所有需要同步的记录
             records = []
             all_names = set()
             all_names.update(self.result.skipped_server_exists)
+            all_names.update(self.result.check_passed)
             all_names.update(self.result.check_failed)
+            all_names.update(self.result.moved_to_final)
             
             for name in sorted(all_names):
                 status = "已完成" if name in self.result.check_passed else "检查不通过"
