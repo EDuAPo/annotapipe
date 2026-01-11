@@ -36,8 +36,10 @@ annotapipe/
 │       ├── zip_worker.py
 │       └── annotation_checker.py
 ├── tools/                   # 辅助工具
-│   ├── annotation_stats.py
-│   └── keyframe_counter.py
+│   ├── annotation_stats.py  # 标注统计
+│   ├── debug_feishu.py      # 飞书表格调试
+│   └── keyframe_counter.py  # 关键帧计数
+├── tests/                   # 测试脚本
 └── data/                    # 数据目录
 ```
 
