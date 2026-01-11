@@ -16,6 +16,25 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+def _load_env_file(env_path: str = "configs/.env"):
+    """手动加载 .env 文件到环境变量"""
+    env_file = Path(env_path)
+    if not env_file.exists():
+        return
+    try:
+        with open(env_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, _, value = line.partition('=')
+                key, value = key.strip(), value.strip()
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except Exception:
+        pass
+
+
 @dataclass
 class TrackingRecord:
     """追踪记录"""
@@ -92,6 +111,9 @@ class FeishuTracker(BaseTracker):
     def _init_config(self):
         """加载配置"""
         try:
+            # 先加载 .env 文件
+            _load_env_file()
+            
             if not self.config_path.exists():
                 logger.warning(f"飞书配置文件不存在: {self.config_path}")
                 return
