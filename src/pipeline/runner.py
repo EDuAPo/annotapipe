@@ -404,6 +404,7 @@ class PipelineRunner:
         print(f"  待处理: {len(files_for_server)} 个 (需上传: {need_upload_count} 个)")
         
         progress = ProgressTracker(len(files_for_server), "服务器处理")
+        tracker = Tracker()
         upload_idx = 0
         
         for idx, (json_file, stem) in enumerate(files_for_server, 1):
@@ -416,6 +417,10 @@ class PipelineRunner:
             else:
                 success = self._process_single(ssh, processor, json_file, stem, state, 0, 0)
             progress.update(success=success, name=stem)
+            
+            # 每完成一个数据包立即同步飞书
+            if success and stem in self.result.moved_to_final:
+                self._track_single_to_feishu(tracker, stem)
         
         progress.summary()
     
