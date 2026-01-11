@@ -238,7 +238,7 @@ runner.py
 
 ## ⚙️ 配置文件
 
-### configs/user_config.yaml
+### configs/pipeline.yaml
 ```yaml
 # 服务器配置
 servers:
