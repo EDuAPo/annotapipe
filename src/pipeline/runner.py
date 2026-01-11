@@ -18,7 +18,7 @@ from .ssh_client import SSHClient
 from .downloader import Downloader
 from .processor import RemoteProcessor
 from .server_logger import ServerLogger
-from .tracker import Tracker, create_tracking_records
+from .tracker import Tracker, TrackingRecord
 from .state import StateManager, ProcessStatus
 
 logger = logging.getLogger(__name__)
@@ -450,13 +450,18 @@ class PipelineRunner:
     
     def _run_streaming(self, ssh: SSHClient, processor: RemoteProcessor,
                        files: List[tuple], state: Dict):
-        """流式模式：下载一个处理一个"""
+        """流式模式：下载一个处理一个，每完成一个立即同步飞书"""
         progress = ProgressTracker(len(files), "流式处理")
         total_count = len(files)
+        tracker = Tracker()
         
         for idx, (json_file, stem) in enumerate(files, 1):
             success = self._process_single(ssh, processor, json_file, stem, state, idx, total_count)
             progress.update(success=success, name=stem)
+            
+            # 每完成一个数据包立即同步飞书
+            if success and stem in self.result.moved_to_final:
+                self._track_single_to_feishu(tracker, stem)
         
         progress.summary()
     
@@ -660,14 +665,48 @@ class PipelineRunner:
                     print(f"    │  [{step}] {display_msg}")
                 print(f"    └─")
     
+    def _track_single_to_feishu(self, tracker: Tracker, stem: str):
+        """单个数据包完成后立即同步飞书"""
+        try:
+            kf = self.result.keyframe_counts.get(stem, 0)
+            status = "已完成" if stem in self.result.check_passed else "检查不通过"
+            uploaded = stem in self.result.moved_to_final
+            
+            record = TrackingRecord(
+                name=stem,
+                keyframe_count=kf,
+                annotation_status=status,
+                uploaded=uploaded,
+            )
+            
+            result = tracker.track([record], str(self.json_dir))
+            if result:
+                print(f"  📤 飞书已同步: {stem}")
+        except Exception as e:
+            logger.warning(f"飞书同步失败 {stem}: {e}")
+    
     def _track_to_feishu(self):
         """将处理结果同步到飞书表格（包括跳过的文件）"""
         try:
             tracker = Tracker()
-            records = create_tracking_records(self.result, self.result.keyframe_counts)
+            
+            # 收集需要同步的记录（排除流式模式中已同步的）
+            records = []
+            all_names = set()
+            all_names.update(self.result.skipped_server_exists)
+            all_names.update(self.result.check_failed)
+            
+            for name in sorted(all_names):
+                status = "已完成" if name in self.result.check_passed else "检查不通过"
+                uploaded = name in self.result.moved_to_final or name in self.result.skipped_server_exists
+                records.append(TrackingRecord(
+                    name=name,
+                    keyframe_count=self.result.keyframe_counts.get(name, 0),
+                    annotation_status=status,
+                    uploaded=uploaded,
+                ))
             
             if not records:
-                logger.info("没有需要追踪的记录")
                 return
             
             print()
