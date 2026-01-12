@@ -127,7 +127,7 @@ class RemoteProcessor:
         status, out, err = self.ssh.exec_command(cmd, timeout=300)
         
         if status != 0:
-            return False, f"处理脚本失败: {err[:200]}"
+            return False, f"处理脚本失败: {err}"
         
         # 注意：ZIP 处理后操作（rename/delete）已移至 move_to_final 中执行
         # 确保只有在整个流程完成后才处理原始 ZIP，避免重复上传问题

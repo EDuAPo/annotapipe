@@ -214,7 +214,7 @@ class FeishuTracker(BaseTracker):
         page_token = None
         page_count = 0
         
-        logger.info(f"📥 加载飞书表格所有记录... (app_token={app_token}, table_id={table_id})")
+        logger.debug(f"📥 加载飞书表格所有记录... (app_token={app_token}, table_id={table_id})")
         
         while True:
             params = {"page_size": 500}
@@ -249,11 +249,7 @@ class FeishuTracker(BaseTracker):
                 logger.error(f"加载记录异常: {e}")
                 break
         
-        logger.info(f"📥 已加载 {len(all_records)} 条记录 ({page_count} 页)")
-        if all_records:
-            # 打印前3条记录的名称，帮助确认是否是正确的表格
-            sample_names = list(all_records.keys())[:3]
-            logger.info(f"📥 示例记录: {sample_names}")
+        logger.debug(f"📥 已加载 {len(all_records)} 条记录 ({page_count} 页)")
         
         self._records_cache = all_records
         self._cache_time = time.time()
@@ -274,16 +270,16 @@ class FeishuTracker(BaseTracker):
         
         # 1. 精确匹配
         if name in all_records:
-            logger.info(f"  ✓ 精确匹配: {name}")
+            logger.debug(f"  ✓ 精确匹配: {name}")
             return all_records[name]
         
         # 2. 模糊匹配：查找包含 time_key 的记录
         for existing_name, record in all_records.items():
             if time_key in existing_name or existing_name in name:
-                logger.info(f"  ✓ 模糊匹配: {name} -> {existing_name}")
+                logger.debug(f"  ✓ 模糊匹配: {name} -> {existing_name}")
                 return record
         
-        logger.info(f"  ✗ 未找到: {name} (将新增)")
+        logger.debug(f"  ✗ 未找到: {name} (将新增)")
         return None
     
     def _batch_create_records(self, records_fields: List[Dict]) -> tuple:
@@ -306,7 +302,7 @@ class FeishuTracker(BaseTracker):
                 for rec in created_records:
                     rec_id = rec.get('record_id', 'N/A')
                     name = rec.get('fields', {}).get('数据包名称', 'N/A')
-                    logger.info(f"  ✓ 已创建: {name} (record_id={rec_id})")
+                    logger.debug(f"  ✓ 已创建: {name} (record_id={rec_id})")
                 return created, created_records
             else:
                 logger.error(f"批量创建失败: code={data.get('code')}, msg={data.get('msg')}")
@@ -325,17 +321,17 @@ class FeishuTracker(BaseTracker):
         
         # 直接使用字段名称
         payload = {"records": records}
-        logger.info(f"📝 更新请求: record_id={records[0]['record_id'] if records else 'N/A'}, fields={records[0]['fields'] if records else {}}")
+        logger.debug(f"📝 更新请求: record_id={records[0]['record_id'] if records else 'N/A'}, fields={records[0]['fields'] if records else {}}")
         try:
             r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
             data = r.json()
-            logger.info(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}, data={data.get('data', {})}")
+            logger.debug(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}")
             if data.get('code') == 0:
                 updated_records = data.get('data', {}).get('records', [])
                 for rec in updated_records:
                     rec_id = rec.get('record_id', 'N/A')
                     name = rec.get('fields', {}).get('数据包名称', 'N/A')
-                    logger.info(f"  ✓ 已更新: {name} (record_id={rec_id})")
+                    logger.debug(f"  ✓ 已更新: {name} (record_id={rec_id})")
                 return len(updated_records)
             else:
                 logger.error(f"批量更新失败: code={data.get('code')}, msg={data.get('msg')}")
@@ -380,13 +376,13 @@ class FeishuTracker(BaseTracker):
         updated_names = []
         total_keyframes = 0
         
-        logger.info(f"📋 开始处理 {len(records)} 条记录...")
+        logger.debug(f"📋 开始处理 {len(records)} 条记录...")
         
         for rec in records:
             total_keyframes += rec.keyframe_count
             
             # 查找是否已存在
-            logger.info(f"🔍 搜索记录: {rec.name}")
+            logger.debug(f"🔍 搜索记录: {rec.name}")
             existing = self._search_record(rec.name)
             
             # 注意：飞书多维表格的字段类型

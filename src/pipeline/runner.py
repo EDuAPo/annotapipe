@@ -722,8 +722,11 @@ class PipelineRunner:
             for stem, error_list in self.result.errors.items():
                 print(f"    ┌─ {stem}")
                 for step, msg in error_list:
-                    display_msg = msg[:60] + "..." if len(msg) > 60 else msg
-                    print(f"    │  [{step}] {display_msg}")
+                    # 显示完整错误信息，支持多行
+                    print(f"    │  [{step}]")
+                    for line in msg.split('\n'):
+                        if line.strip():
+                            print(f"    │    {line}")
                 print(f"    └─")
     
     def _track_single_to_feishu(self, tracker: Tracker, stem: str):

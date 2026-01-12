@@ -4,9 +4,9 @@
 模块化重构版本 v2.0
 
 使用方法:
-    python run_pipeline.py --json_dir /path/to/jsons
-    python run_pipeline.py --json_dir /path/to/jsons --mode parallel --workers 4
-    python run_pipeline.py --json_dir /path/to/jsons --mode streaming
+    python3 run_pipeline.py --json_dir /path/to/jsons
+    python3 run_pipeline.py --json_dir /path/to/jsons --mode parallel --workers 4
+    python3 run_pipeline.py --json_dir /path/to/jsons --mode streaming
 """
 
 import argparse
