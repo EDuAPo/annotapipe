@@ -65,20 +65,21 @@ class RemoteProcessor:
         server = self.ssh.server
         
         # 获取已有的 ZIP 文件
-        zip_files = set()
-        processed_zip_stems = set()  # 已处理完成的 ZIP（通过 processed_ 前缀判断）
+        zip_files = set()  # 存储标准化的文件名（不带processed_前缀）
+        zip_file_map = {}  # 标准文件名 -> 实际文件名的映射
         files = self.ssh.list_files(server.zip_dir, "*.zip")
         for name in files:
             if name.startswith("processed_"):
-                stem = name[len("processed_"):]
-                zip_files.add(stem)
-                processed_zip_stems.add(stem.replace('.zip', ''))
+                # 去掉 processed_ 前缀得到标准文件名
+                standard_name = name[len("processed_"):]
+                zip_files.add(standard_name)
+                zip_file_map[standard_name] = name
             else:
+                # 文件名本身就是标准名
                 zip_files.add(name)
+                zip_file_map[name] = name
         
         # 获取已处理完成的目录（只检查当前 final_dir）
-        # 如果数据在其他 final_dir 中，但不在当前 final_dir 中，会重新处理
-        # 这样可以支持将数据移动到不同的 final_dir（旧数据会保留）
         processed_dirs = set(self.ssh.list_dirs(server.final_dir))
         
         # 获取处理中的目录（断点续传支持）
@@ -86,6 +87,7 @@ class RemoteProcessor:
         
         return {
             "zip_files": zip_files,
+            "zip_file_map": zip_file_map,
             "processed_dirs": processed_dirs,
             "processing_dirs": processing_dirs,
         }
@@ -97,7 +99,7 @@ class RemoteProcessor:
         """
         server = self.ssh.server
         
-        # 上传 JSON 文件（如果还没上传）
+        # 上传 JSON 文件
         remote_json = f"/tmp/{Path(json_path).name}"
         if not self.ssh.file_exists(remote_json):
             if not self.ssh.upload_file(json_path, remote_json):
@@ -107,21 +109,62 @@ class RemoteProcessor:
         has_zip = self.ssh.file_exists(zip_path)
         
         if has_zip:
-            # 有 ZIP 文件：执行完整的处理脚本
-            cmd = (
-                f"python3 {REMOTE_WORKER_SCRIPT} "
-                f"--zip '{zip_path}' "
-                f"--json '{remote_json}' "
-                f"--out '{server.process_dir}' "
-                f"--rename_json '{self.config.rename_json}'"
-            )
+            # 有 ZIP 文件：解压并处理
+            logger.info(f"[{stem}] 📦 解压ZIP...")
             
-            status, out, err = self.ssh.exec_command(cmd, timeout=300)
+            # 尝试使用tqdm显示进度
+            try:
+                from tqdm import tqdm
+                import threading
+                import sys
+                
+                # 创建不确定进度条
+                pbar = tqdm(desc=f"  解压 {stem[:20]}", bar_format='{desc}: {elapsed}', ncols=60, file=sys.stdout)
+                
+                # 在后台线程中执行解压命令
+                result = [None, None, None]  # [status, out, err]
+                
+                def extract_task():
+                    cmd = (
+                        f"python3 {REMOTE_WORKER_SCRIPT} "
+                        f"--zip '{zip_path}' "
+                        f"--json '{remote_json}' "
+                        f"--out '{server.process_dir}' "
+                        f"--output_name '{stem}' "
+                        f"--rename_json '{self.config.rename_json}'"
+                    )
+                    status, out, err = self.ssh.exec_command(cmd, timeout=300)
+                    result[0], result[1], result[2] = status, out, err
+                
+                thread = threading.Thread(target=extract_task)
+                thread.start()
+                
+                # 等待线程完成，同时更新进度条
+                while thread.is_alive():
+                    pbar.update(0)  # 触发刷新
+                    thread.join(timeout=0.5)
+                
+                pbar.close()
+                status, out, err = result
+                
+            except ImportError:
+                # 如果没有tqdm，直接执行
+                cmd = (
+                    f"python3 {REMOTE_WORKER_SCRIPT} "
+                    f"--zip '{zip_path}' "
+                    f"--json '{remote_json}' "
+                    f"--out '{server.process_dir}' "
+                    f"--output_name '{stem}' "
+                    f"--rename_json '{self.config.rename_json}'"
+                )
+                status, out, err = self.ssh.exec_command(cmd, timeout=300)
             
             if status != 0:
                 return False, f"处理脚本失败: {err}"
+            
+            logger.info(f"[{stem}] ✓ 解压完成")
         else:
-            # 没有 ZIP 文件：仅处理 JSON（创建目录结构并放置 JSON）
+            # 没有 ZIP 文件：仅处理 JSON
             target_dir = f"{server.process_dir}/{stem}"
             self.ssh.mkdir_p(target_dir)
             
@@ -133,9 +176,6 @@ class RemoteProcessor:
             status, _, err = self.ssh.exec_command(f"cp '{remote_json}' '{target_json}'")
             if status != 0:
                 return False, f"复制 JSON 失败: {err}"
-        
-        # 注意：ZIP 处理后操作（rename/delete）已移至 move_to_final 中执行
-        # 确保只有在整个流程完成后才处理原始 ZIP，避免重复上传问题
         
         return True, ""
     
@@ -193,14 +233,14 @@ class RemoteProcessor:
                 status, out, err = self.ssh.exec_command(cmd)
                 if status == 0 and out.strip().isdigit():
                     count = int(out.strip())
-                    logger.info(f"  ✓ 关键帧数: {count}")
+                    logger.debug(f"  ✓ 关键帧数: {count}")
                     return count
                 else:
-                    logger.warning(f"  ✗ 读取失败 status={status}, out={out.strip()}, err={err.strip()}")
+                    logger.debug(f"  ✗ 读取失败 status={status}, out={out.strip()}, err={err.strip()}")
             else:
                 logger.debug(f"  ✗ 不存在: {sample_path}")
         
-        logger.warning(f"⚠ 未找到关键帧数据: {data_dir}")
+        logger.debug(f"⚠ 未找到关键帧数据: {data_dir}")
         return 0
     
     def get_keyframe_count_from_zip(self, zip_path: str) -> int:

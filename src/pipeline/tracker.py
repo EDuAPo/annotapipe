@@ -341,6 +341,38 @@ class FeishuTracker(BaseTracker):
             logger.error(f"批量更新异常: {e}")
         return 0
     
+    def _get_path_field_from_pipeline(self, pipeline_config_path: str) -> str:
+        """从 pipeline.yaml 读取 final_dir 并转换为飞书列名
+        
+        例如: /data02/dataset/scenesnew -> 上传data02/dataset/scenesnew
+        """
+        try:
+            config_path = Path(pipeline_config_path)
+            if not config_path.exists():
+                logger.warning(f"Pipeline配置文件不存在: {pipeline_config_path}，使用默认路径")
+                return "上传data02/dataset/scenesnew"
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                pipeline_config = yaml.safe_load(f) or {}
+            
+            # 获取第一个启用的服务器的 final_dir
+            servers = pipeline_config.get('servers', [])
+            for server in servers:
+                if server.get('enabled', True):
+                    final_dir = server.get('final_dir', '')
+                    if final_dir:
+                        # 去掉开头的 '/'，然后加上 '上传' 前缀
+                        path_without_slash = final_dir.lstrip('/')
+                        path_field = f"上传{path_without_slash}"
+                        logger.debug(f"从 pipeline.yaml 读取路径: {final_dir} -> {path_field}")
+                        return path_field
+            
+            logger.warning("未找到启用的服务器配置，使用默认路径")
+            return "上传data02/dataset/scenesnew"
+        except Exception as e:
+            logger.warning(f"读取 pipeline.yaml 失败: {e}，使用默认路径")
+            return "上传data02/dataset/scenesnew"
+    
     def detect_attributes(self, json_dir: str) -> List[str]:
         """从路径中检测数据属性"""
         attributes = []
@@ -354,7 +386,7 @@ class FeishuTracker(BaseTracker):
                     break
         return attributes
     
-    def track(self, records: List[TrackingRecord], json_dir: str = None) -> Dict[str, Any]:
+    def track(self, records: List[TrackingRecord], json_dir: str = None, pipeline_config_path: str = "configs/pipeline.yaml") -> Dict[str, Any]:
         """追踪到飞书表格"""
         if not self.is_available:
             logger.warning("飞书追踪器不可用，跳过")
@@ -365,9 +397,8 @@ class FeishuTracker(BaseTracker):
         
         attributes = self.detect_attributes(json_dir) if json_dir else []
         
-        # 获取当前路径标识（用于路径列）
-        current_path = self.config.get('current_upload_path', 'data02/dataset/scenesnew')
-        path_field = f'上传{current_path}'
+        # 从 pipeline.yaml 动态读取 final_dir 并转换为飞书列名
+        path_field = self._get_path_field_from_pipeline(pipeline_config_path)
         field_mapping = self.config.get('field_mapping', {})
         
         to_create = []
@@ -469,7 +500,7 @@ class FeishuTracker(BaseTracker):
             if i + 500 < len(to_update):
                 time.sleep(0.5)
         
-        logger.info(f"✅ 飞书更新: 新增 {created_count}, 更新 {updated_count}, 关键帧 {total_keyframes}")
+        logger.info(f"✅ 飞书更新: 新增 {created_count}, 更新 {updated_count}")
         
         return {
             'created': created_names,
@@ -486,10 +517,10 @@ class Tracker:
         self.local = LocalTracker()
         self._use_feishu = self.feishu.is_available
     
-    def track(self, records: List[TrackingRecord], json_dir: str = None) -> Dict[str, Any]:
+    def track(self, records: List[TrackingRecord], json_dir: str = None, pipeline_config_path: str = "configs/pipeline.yaml") -> Dict[str, Any]:
         """追踪记录"""
         if self._use_feishu:
-            return self.feishu.track(records, json_dir)
+            return self.feishu.track(records, json_dir, pipeline_config_path)
         else:
             return self.local.track(records)
     

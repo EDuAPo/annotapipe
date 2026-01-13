@@ -207,31 +207,31 @@ class PipelineRunner:
             local_zip_files = list(self.local_zip_dir.glob("*.zip"))
             print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
             
-            # 过滤需要处理的文件，跳过的文件立即同步飞书
+            # 过滤需要处理的文件，跳过的文件立即更新飞书
             files_to_process = []
             tracker = Tracker()
-            skipped_stems = []
             for json_file in json_files:
                 stem = json_file.stem
                 if stem in state['processed_dirs']:
                     # 尝试获取关键帧数量，如果失败则重新处理
+                    logger.info(f"[{stem}] 检查final_dir中的数据完整性...")
                     kf = processor.get_keyframe_count(f"{ssh.server.final_dir}/{stem}")
                     if kf > 0:
                         # 服务器上已完成且数据完整的文件，记录为跳过
+                        logger.info(f"[{stem}] ✓ 已在final_dir中 (关键帧: {kf})，跳过所有步骤")
                         self.result.skipped_server_exists.append(stem)
                         self.result.check_passed.append(stem)
                         self.result.keyframe_counts[stem] = kf
-                        skipped_stems.append(stem)
+                        # 立即更新飞书
+                        logger.info(f"[{stem}] 更新飞书表格...")
+                        self._track_single_to_feishu(tracker, stem, silent=True)
+                        logger.info(f"[{stem}] ✓ 飞书已更新")
                     else:
                         # 数据不完整，需要重新处理
-                        logger.info(f"⚠ {stem} 在final_dir但数据不完整，将重新处理")
+                        logger.warning(f"[{stem}] ✗ 在final_dir但数据不完整，将重新处理")
                         files_to_process.append((json_file, stem))
                 else:
                     files_to_process.append((json_file, stem))
-            
-            # 跳过的数据包立即同步飞书
-            for stem in skipped_stems:
-                self._track_single_to_feishu(tracker, stem)
             
             skipped = len(json_files) - len(files_to_process)
             if skipped > 0:
@@ -240,7 +240,6 @@ class PipelineRunner:
             if not files_to_process:
                 print("  ✓ 所有文件都已处理完成")
                 self._print_summary()
-                # 注意：跳过的文件已在上面通过 _track_single_to_feishu 同步
                 return self.result
             
             # 计算实际需要下载的数量
@@ -428,8 +427,9 @@ class PipelineRunner:
                 success = self._process_single(ssh, processor, json_file, stem, state, upload_idx, need_upload_count)
             else:
                 success = self._process_single(ssh, processor, json_file, stem, state, 0, 0)
-            # 每完成一个数据包立即同步飞书（静默模式，不干扰进度条）
-            self._track_single_to_feishu(tracker, stem, silent=True)
+            # 只在成功时同步飞书
+            if success:
+                self._track_single_to_feishu(tracker, stem, silent=True)
             progress.update(success=success, name=stem)
         
         progress.summary()
@@ -454,14 +454,13 @@ class PipelineRunner:
                 for future in as_completed(futures):
                     stem = futures[future]
                     try:
-                        # 每完成一个数据包立即同步飞书（静默模式，不干扰进度条）
-                        self._track_single_to_feishu(tracker, stem, silent=True)
                         success = future.result()
+                        # 只在成功时同步飞书
+                        if success:
+                            self._track_single_to_feishu(tracker, stem, silent=True)
                         progress.update(success=success, name=stem)
                     except Exception as e:
                         logger.error(f"并行处理异常 {stem}: {e}")
-                        # 异常情况也要同步飞书（静默模式）
-                        self._track_single_to_feishu(tracker, stem, silent=True)
                         progress.update(success=False, name=f"{stem} (异常)")
         finally:
             pool.close_all()
@@ -511,8 +510,9 @@ class PipelineRunner:
                 total_count = 0
             
             success = self._process_single(ssh, processor, json_file, stem, state, current_idx, total_count)
-            # 每完成一个数据包立即同步飞书（静默模式，不干扰进度条）
-            self._track_single_to_feishu(tracker, stem, silent=True)
+            # 只在成功时同步飞书
+            if success:
+                self._track_single_to_feishu(tracker, stem, silent=True)
             progress.update(success=success, name=stem)
         
         progress.summary()
@@ -524,90 +524,135 @@ class PipelineRunner:
         zip_name = f"{stem}.zip"
         local_zip = self.local_zip_dir / zip_name
         server = ssh.server
-        remote_zip = f"{server.zip_dir}/{zip_name}"
         
-        # 进度前缀
-        progress_prefix = f"[{current_idx}/{total_count}] " if total_count > 0 else ""
+        # 检查服务器是否已有 ZIP 文件（可能带有 processed_ 前缀）
+        server_has_zip = zip_name in state['zip_files']
+        actual_zip_name = state.get('zip_file_map', {}).get(zip_name, zip_name)
+        remote_zip = f"{server.zip_dir}/{actual_zip_name}"
+        
+        # 检查是否可以从中间状态恢复
+        skip_download = self.state_manager.can_skip_download(stem)
+        skip_upload = self.state_manager.can_skip_upload(stem)
+        
+        # 检查 process_dir 中是否已有解压的数据
+        in_processing = stem in state.get('processing_dirs', set())
+        
+        # 检查本地文件是否存在（不验证完整性，避免卡顿）
+        local_exists = local_zip.exists() and local_zip.stat().st_size > 0
         
         try:
-            # 检查是否可以从中间状态恢复
-            skip_download = self.state_manager.can_skip_download(stem)
-            skip_upload = self.state_manager.can_skip_upload(stem)
-            
-            # 检查 process_dir 中是否已有解压的数据
-            in_processing = stem in state.get('processing_dirs', set())
-            
-            # 检查本地文件是否存在（不验证完整性，避免卡顿）
-            local_exists = local_zip.exists() and local_zip.stat().st_size > 0
-            
-            # 下载（只在本地不存在且服务器也没有时才下载）
-            if not skip_download and zip_name not in state['zip_files'] and not local_exists:
-                # 创建下载进度回调
+            # 步骤1: 下载ZIP（如果需要）
+            if not skip_download and not server_has_zip and not local_exists:
+                logger.info(f"[{stem}] ⬇ 下载ZIP...")
                 download_start = [time.time()]
                 last_print = [0]
                 
                 def download_progress(downloaded, total):
                     now = time.time()
-                    if now - last_print[0] < 0.3:  # 限制刷新频率
+                    if now - last_print[0] < 0.3:
                         return
                     last_print[0] = now
                     elapsed = now - download_start[0]
                     speed = downloaded / elapsed / 1024 / 1024 if elapsed > 0 else 0
                     percent = downloaded / total * 100 if total > 0 else 0
-                    sys.stdout.write(f'\r\033[K  {progress_prefix}⬇ 下载 {stem[:20]}: {downloaded/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
+                    sys.stdout.write(f'\r\033[K  ⬇ 下载 {stem[:20]}: {downloaded/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
                     sys.stdout.flush()
                 
                 if not self.downloader.download_file(zip_name, local_zip, progress_callback=download_progress):
-                    print()  # 换行
+                    print()
+                    logger.error(f"[{stem}] 下载失败")
                     self.result.log_error(stem, "下载", "下载失败")
                     self.result.check_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, "下载失败")
                     return False
-                print()  # 换行
+                print()
                 self.result.downloaded.append(stem)
                 self.state_manager.update(stem, ProcessStatus.DOWNLOADED)
+            else:
+                if server_has_zip:
+                    logger.info(f"[{stem}] ⏭ 跳过下载 (服务器已有)")
+                elif local_exists:
+                    logger.info(f"[{stem}] ⏭ 跳过下载 (本地已有)")
+                elif skip_download:
+                    logger.info(f"[{stem}] ⏭ 跳过下载 (断点续传)")
             
-            # 上传
-            if not skip_upload and zip_name not in state['zip_files'] and local_zip.exists():
-                # 创建上传进度回调
-                file_size = local_zip.stat().st_size
+            # 步骤2: 上传ZIP到服务器（如果需要）
+            if not skip_upload and not server_has_zip and local_zip.exists():
+                logger.info(f"[{stem}] ⬆ 上传ZIP...")
                 upload_start = [time.time()]
                 last_print = [0]
                 
                 def upload_progress(transferred, total):
                     now = time.time()
-                    if now - last_print[0] < 0.3:  # 限制刷新频率
+                    if now - last_print[0] < 0.3:
                         return
                     last_print[0] = now
                     elapsed = now - upload_start[0]
                     speed = transferred / elapsed / 1024 / 1024 if elapsed > 0 else 0
                     percent = transferred / total * 100 if total > 0 else 0
-                    sys.stdout.write(f'\r\033[K  {progress_prefix}⬆ 上传 {stem[:20]}: {transferred/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
+                    sys.stdout.write(f'\r\033[K  ⬆ 上传 {stem[:20]}: {transferred/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
                     sys.stdout.flush()
                 
                 if not ssh.upload_file(str(local_zip), remote_zip, progress_callback=upload_progress):
-                    print()  # 换行
+                    print()
+                    logger.error(f"[{stem}] 上传失败")
                     self.result.log_error(stem, "上传", "上传失败")
                     self.result.check_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, "上传失败")
                     return False
-                print()  # 换行
+                print()
                 self.result.uploaded.append(stem)
                 self.state_manager.update(stem, ProcessStatus.UPLOADED)
+            else:
+                if server_has_zip:
+                    logger.info(f"[{stem}] ⏭ 跳过上传 (服务器已有)")
+                elif skip_upload:
+                    logger.info(f"[{stem}] ⏭ 跳过上传 (断点续传)")
             
-            # 处理（如果 process_dir 中已有数据则跳过）
-            if not in_processing:
-                success, err = processor.process_zip(remote_zip, str(json_file), stem)
-                if not success:
-                    self.result.log_error(stem, "处理", err)
-                    self.result.check_failed.append(stem)
-                    self.state_manager.update(stem, ProcessStatus.FAILED, err)
-                    return False
+            # 步骤3-5: 解压ZIP并上传JSON
+            data_dir = f"{server.process_dir}/{stem}"
+            need_extract = True
+            
+            if in_processing:
+                # 目录已存在，验证数据完整性
+                logger.info(f"[{stem}] 🔍 验证数据完整性...")
+                kf_check = processor.get_keyframe_count(data_dir)
+                if kf_check > 0:
+                    logger.info(f"[{stem}] ✓ 数据完整，跳过解压")
+                    need_extract = False
+                else:
+                    logger.warning(f"[{stem}] ✗ 数据不完整，重新解压")
+                    ssh.exec_command(f"rm -rf '{data_dir}'")
+            
+            if need_extract:
+                # 尝试解压，失败时清理并重试一次
+                max_retries = 2
+                for attempt in range(max_retries):
+                    success, err = processor.process_zip(remote_zip, str(json_file), stem)
+                    if success:
+                        break
+                    
+                    # 解压失败
+                    if attempt < max_retries - 1:
+                        # 还有重试机会，清理并重试
+                        logger.warning(f"[{stem}] 解压失败 (尝试 {attempt + 1}/{max_retries}): {err[:100]}")
+                        logger.info(f"[{stem}] 清理不完整数据并重试...")
+                        ssh.exec_command(f"rm -rf '{data_dir}'")
+                    else:
+                        # 最后一次尝试也失败了
+                        logger.error(f"[{stem}] 解压失败 ({max_retries}次尝试): {err}")
+                        logger.info(f"[{stem}] 清理不完整的数据...")
+                        ssh.exec_command(f"rm -rf '{data_dir}'")
+                        self.result.log_error(stem, "处理", err)
+                        self.result.check_failed.append(stem)
+                        self.state_manager.update(stem, ProcessStatus.FAILED, err)
+                        return False
+            
             self.result.processed.append(stem)
             self.state_manager.update(stem, ProcessStatus.PROCESSED)
             
-            # 检查
-            data_dir = f"{server.process_dir}/{stem}"
+            # 检查标注质量
+            logger.info(f"[{stem}] 🔍 检查质量...")
             passed, issue_count, report = processor.check_annotations(data_dir, stem)
             
             # 获取关键帧数量
@@ -615,39 +660,39 @@ class PipelineRunner:
             self.result.keyframe_counts[stem] = kf
             
             if not passed:
+                logger.error(f"[{stem}] 检查未通过: 发现 {issue_count} 个问题帧")
                 self.result.log_error(stem, "检查", f"发现 {issue_count} 个问题帧")
                 self.result.check_failed.append(stem)
                 self.state_manager.update(stem, ProcessStatus.CHECKED, f"检查失败: {issue_count} 个问题帧")
-                # 下载报告
                 local_report = self.local_check_dir / f"report_{stem}.txt"
                 ssh.download_file(report, str(local_report))
                 return False
             
+            logger.info(f"[{stem}] ✓ 质量检查通过 ({kf}帧)")
             self.result.check_passed.append(stem)
             self.state_manager.update(stem, ProcessStatus.CHECKED)
             
-            # 移动
+            # 移动到final_dir
+            logger.info(f"[{stem}] 📁 移动到final_dir...")
             success, dst = processor.move_to_final(stem)
             if success:
+                logger.info(f"[{stem}] ✓ 完成")
                 self.result.moved_to_final.append(stem)
-                # 注意：暂时不删除本地ZIP文件，保留以便调试
-                # if local_zip.exists():
-                #     local_zip.unlink()
-                # 记录服务器日志
                 if self.server_logger:
                     self.server_logger.log_success(stem, kf)
-                # 标记完成
                 self.state_manager.update(stem, ProcessStatus.COMPLETED)
             else:
+                logger.error(f"[{stem}] ✗ 移动失败: {dst}")
                 self.result.log_error(stem, "移动", dst)
+                return False
             
             return True
             
         except Exception as e:
+            logger.error(f"[{stem}] 异常: {e}")
             self.result.log_error(stem, "异常", str(e))
             self.result.check_failed.append(stem)
             self.state_manager.update(stem, ProcessStatus.FAILED, str(e))
-            # 记录失败日志
             if self.server_logger:
                 self.server_logger.log_failure(stem, str(e))
             return False
