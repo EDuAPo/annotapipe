@@ -214,13 +214,18 @@ class PipelineRunner:
             for json_file in json_files:
                 stem = json_file.stem
                 if stem in state['processed_dirs']:
-                    # 服务器上已完成的文件，记录为跳过
-                    self.result.skipped_server_exists.append(stem)
-                    self.result.check_passed.append(stem)
-                    # 获取关键帧数量
+                    # 尝试获取关键帧数量，如果失败则重新处理
                     kf = processor.get_keyframe_count(f"{ssh.server.final_dir}/{stem}")
-                    self.result.keyframe_counts[stem] = kf
-                    skipped_stems.append(stem)
+                    if kf > 0:
+                        # 服务器上已完成且数据完整的文件，记录为跳过
+                        self.result.skipped_server_exists.append(stem)
+                        self.result.check_passed.append(stem)
+                        self.result.keyframe_counts[stem] = kf
+                        skipped_stems.append(stem)
+                    else:
+                        # 数据不完整，需要重新处理
+                        logger.info(f"⚠ {stem} 在final_dir但数据不完整，将重新处理")
+                        files_to_process.append((json_file, stem))
                 else:
                     files_to_process.append((json_file, stem))
             
@@ -423,10 +428,9 @@ class PipelineRunner:
                 success = self._process_single(ssh, processor, json_file, stem, state, upload_idx, need_upload_count)
             else:
                 success = self._process_single(ssh, processor, json_file, stem, state, 0, 0)
+            # 每完成一个数据包立即同步飞书（静默模式，不干扰进度条）
+            self._track_single_to_feishu(tracker, stem, silent=True)
             progress.update(success=success, name=stem)
-            
-            # 每完成一个数据包立即同步飞书（无论成功还是失败）
-            self._track_single_to_feishu(tracker, stem)
         
         progress.summary()
     
@@ -435,6 +439,7 @@ class PipelineRunner:
         """全并行模式：使用连接池复用 SSH 连接"""
         progress = ProgressTracker(len(files), "并行处理")
         pool = SSHConnectionPool(size=workers)
+        tracker = Tracker()
         
         try:
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -449,10 +454,14 @@ class PipelineRunner:
                 for future in as_completed(futures):
                     stem = futures[future]
                     try:
+                        # 每完成一个数据包立即同步飞书（静默模式，不干扰进度条）
+                        self._track_single_to_feishu(tracker, stem, silent=True)
                         success = future.result()
                         progress.update(success=success, name=stem)
                     except Exception as e:
                         logger.error(f"并行处理异常 {stem}: {e}")
+                        # 异常情况也要同步飞书（静默模式）
+                        self._track_single_to_feishu(tracker, stem, silent=True)
                         progress.update(success=False, name=f"{stem} (异常)")
         finally:
             pool.close_all()
@@ -502,10 +511,9 @@ class PipelineRunner:
                 total_count = 0
             
             success = self._process_single(ssh, processor, json_file, stem, state, current_idx, total_count)
+            # 每完成一个数据包立即同步飞书（静默模式，不干扰进度条）
+            self._track_single_to_feishu(tracker, stem, silent=True)
             progress.update(success=success, name=stem)
-            
-            # 每完成一个数据包立即同步飞书（无论成功还是失败）
-            self._track_single_to_feishu(tracker, stem)
         
         progress.summary()
     
@@ -729,7 +737,7 @@ class PipelineRunner:
                             print(f"    │    {line}")
                 print(f"    └─")
     
-    def _track_single_to_feishu(self, tracker: Tracker, stem: str):
+    def _track_single_to_feishu(self, tracker: Tracker, stem: str, silent: bool = False):
         """单个数据包完成后立即同步飞书"""
         try:
             kf = self.result.keyframe_counts.get(stem, 0)
@@ -743,9 +751,9 @@ class PipelineRunner:
                 uploaded=uploaded,
             )
             
-            result = tracker.track([record], str(self.json_dir))
-            if result:
-                print(f"  📤 飞书已同步: {stem}")
+            result = tracker.track([record], str(self.json_dir), "configs/pipeline.yaml")
+            if result and not silent:
+                logger.info(f"飞书已同步: {stem}")
         except Exception as e:
             logger.warning(f"飞书同步失败 {stem}: {e}")
     
@@ -778,7 +786,7 @@ class PipelineRunner:
             print()
             print(f"  📤 同步到飞书: {len(records)} 条记录...")
             
-            result = tracker.track(records, str(self.json_dir))
+            result = tracker.track(records, str(self.json_dir), "configs/pipeline.yaml")
             
             if result:
                 created = result.get('created', 0)

@@ -76,23 +76,10 @@ class RemoteProcessor:
             else:
                 zip_files.add(name)
         
-        # 获取已处理完成的目录（检查当前 final_dir）
+        # 获取已处理完成的目录（只检查当前 final_dir）
+        # 如果数据在其他 final_dir 中，但不在当前 final_dir 中，会重新处理
+        # 这样可以支持将数据移动到不同的 final_dir（旧数据会保留）
         processed_dirs = set(self.ssh.list_dirs(server.final_dir))
-        
-        # 同时检查其他可能的 final_dir（支持多路径）
-        # 这样即使切换了 final_dir，之前处理过的数据也不会被重复处理
-        other_final_dirs = [
-            "/data02/dataset/scenesnew",
-            "/data02/dataset/lines",
-        ]
-        for other_dir in other_final_dirs:
-            if other_dir != server.final_dir:
-                other_processed = self.ssh.list_dirs(other_dir)
-                processed_dirs.update(other_processed)
-        
-        # 同时将 processed_ 前缀的 ZIP 对应的 stem 也加入已完成列表
-        # 这样即使 final_dir 中没有对应目录，也能识别为已处理
-        processed_dirs.update(processed_zip_stems)
         
         # 获取处理中的目录（断点续传支持）
         processing_dirs = set(self.ssh.list_dirs(server.process_dir))
@@ -105,29 +92,47 @@ class RemoteProcessor:
     
     def process_zip(self, zip_path: str, json_path: str, stem: str) -> Tuple[bool, str]:
         """
-        在服务器上处理 ZIP 文件
+        在服务器上处理 ZIP 文件（如果有 ZIP）或仅处理 JSON
         返回 (success, error_message)
         """
         server = self.ssh.server
         
-        # 上传 JSON 文件
+        # 上传 JSON 文件（如果还没上传）
         remote_json = f"/tmp/{Path(json_path).name}"
-        if not self.ssh.upload_file(json_path, remote_json):
-            return False, "上传 JSON 文件失败"
+        if not self.ssh.file_exists(remote_json):
+            if not self.ssh.upload_file(json_path, remote_json):
+                return False, "上传 JSON 文件失败"
         
-        # 执行处理脚本
-        cmd = (
-            f"python3 {REMOTE_WORKER_SCRIPT} "
-            f"--zip '{zip_path}' "
-            f"--json '{remote_json}' "
-            f"--out '{server.process_dir}' "
-            f"--rename_json '{self.config.rename_json}'"
-        )
+        # 检查是否有 ZIP 文件
+        has_zip = self.ssh.file_exists(zip_path)
         
-        status, out, err = self.ssh.exec_command(cmd, timeout=300)
-        
-        if status != 0:
-            return False, f"处理脚本失败: {err}"
+        if has_zip:
+            # 有 ZIP 文件：执行完整的处理脚本
+            cmd = (
+                f"python3 {REMOTE_WORKER_SCRIPT} "
+                f"--zip '{zip_path}' "
+                f"--json '{remote_json}' "
+                f"--out '{server.process_dir}' "
+                f"--rename_json '{self.config.rename_json}'"
+            )
+            
+            status, out, err = self.ssh.exec_command(cmd, timeout=300)
+            
+            if status != 0:
+                return False, f"处理脚本失败: {err}"
+        else:
+            # 没有 ZIP 文件：仅处理 JSON（创建目录结构并放置 JSON）
+            target_dir = f"{server.process_dir}/{stem}"
+            self.ssh.mkdir_p(target_dir)
+            
+            # 确定 JSON 文件名
+            json_filename = "annotations.json" if self.config.rename_json else Path(json_path).name
+            target_json = f"{target_dir}/{json_filename}"
+            
+            # 复制 JSON 到目标位置
+            status, _, err = self.ssh.exec_command(f"cp '{remote_json}' '{target_json}'")
+            if status != 0:
+                return False, f"复制 JSON 失败: {err}"
         
         # 注意：ZIP 处理后操作（rename/delete）已移至 move_to_final 中执行
         # 确保只有在整个流程完成后才处理原始 ZIP，避免重复上传问题
@@ -165,19 +170,77 @@ class RemoteProcessor:
     
     def get_keyframe_count(self, data_dir: str) -> int:
         """获取关键帧数量"""
+        # 检查多个可能的 JSON 文件位置
         sample_paths = [
             f"{data_dir}/sample.json",
             f"{data_dir}/undistorted/sample.json",
+            f"{data_dir}/annotations.json",  # JSON-only 模式
         ]
+        
+        logger.debug(f"🔍 检查关键帧: {data_dir}")
         
         for sample_path in sample_paths:
             if self.ssh.file_exists(sample_path):
-                cmd = f"python3 -c \"import json; print(len(json.load(open('{sample_path}'))))\""
-                status, out, _ = self.ssh.exec_command(cmd)
+                logger.debug(f"  ✓ 找到: {sample_path}")
+                # 尝试多种 JSON 格式
+                cmd = (
+                    f"python3 -c \""
+                    f"import json; "
+                    f"data = json.load(open('{sample_path}')); "
+                    f"print(len(data['frames']) if isinstance(data, dict) and 'frames' in data else len(data))"
+                    f"\""
+                )
+                status, out, err = self.ssh.exec_command(cmd)
                 if status == 0 and out.strip().isdigit():
-                    return int(out.strip())
+                    count = int(out.strip())
+                    logger.info(f"  ✓ 关键帧数: {count}")
+                    return count
+                else:
+                    logger.warning(f"  ✗ 读取失败 status={status}, out={out.strip()}, err={err.strip()}")
+            else:
+                logger.debug(f"  ✗ 不存在: {sample_path}")
         
+        logger.warning(f"⚠ 未找到关键帧数据: {data_dir}")
         return 0
+    
+    def get_keyframe_count_from_zip(self, zip_path: str) -> int:
+        """从ZIP文件中读取关键帧数量（不解压整个ZIP）"""
+        # 创建临时目录
+        temp_dir = f"/tmp/kf_extract_{Path(zip_path).stem}"
+        self.ssh.exec_command(f"rm -rf '{temp_dir}'")
+        self.ssh.mkdir_p(temp_dir)
+        
+        try:
+            # 尝试提取 sample.json 或 undistorted/sample.json
+            sample_paths = ["sample.json", "undistorted/sample.json"]
+            
+            for sample_path in sample_paths:
+                # 尝试从ZIP中提取特定文件
+                extract_cmd = f"unzip -q -j '{zip_path}' '*/{sample_path}' -d '{temp_dir}' 2>/dev/null || true"
+                self.ssh.exec_command(extract_cmd)
+                
+                # 检查是否提取成功
+                extracted_file = f"{temp_dir}/sample.json"
+                if self.ssh.file_exists(extracted_file):
+                    # 读取关键帧数量
+                    cmd = (
+                        f"python3 -c \""
+                        f"import json; "
+                        f"data = json.load(open('{extracted_file}')); "
+                        f"print(len(data['frames']) if isinstance(data, dict) and 'frames' in data else len(data))"
+                        f"\""
+                    )
+                    status, out, _ = self.ssh.exec_command(cmd)
+                    if status == 0 and out.strip().isdigit():
+                        count = int(out.strip())
+                        logger.info(f"从ZIP读取关键帧: {Path(zip_path).name} -> {count} 帧")
+                        return count
+            
+            logger.warning(f"无法从ZIP中提取sample.json: {zip_path}")
+            return 0
+        finally:
+            # 清理临时目录
+            self.ssh.exec_command(f"rm -rf '{temp_dir}'")
     
     def move_to_final(self, stem: str) -> Tuple[bool, str]:
         """移动到最终目录，并清理原始 ZIP"""
