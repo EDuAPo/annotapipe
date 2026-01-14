@@ -3,7 +3,7 @@
 
 # NAS连接信息
 nas:
-  enabled: true  # 是否启用NAS备份
+  enabled: false  # 是否启用NAS备份
   host: "192.168.2.41"
   share: "public"  # SMB共享名称
   username: "SYSC"
