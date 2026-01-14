@@ -1,73 +1,136 @@
 # AnnotaPipe
 
-**标注数据自动化处理流水线** - 用于从 DataWeave 平台下载数据、上传到远程服务器、处理和检查标注质量。
+**标注数据自动化处理流水线** - 企业级数据处理解决方案，用于从 DataWeave 平台下载数据、上传到远程服务器、处理和检查标注质量。
 
-> 🎉 **项目状态**: v1.0 已完成，进入收尾阶段
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/Status-Production-success.svg)]()
+
+> 🎉 **项目状态**: v1.0 生产就绪，支持大规模数据处理
+
+---
+
+## 📋 目录
+
+- [功能特性](#-功能特性)
+- [项目结构](#-项目结构)
+- [快速开始](#-快速开始)
+- [运行模式](#️-运行模式)
+- [配置说明](#-配置说明)
+- [处理流程](#-处理流程)
+- [数据完整性保护](#-数据完整性保护)
+- [辅助工具](#️-辅助工具)
+- [故障排除](#-故障排除)
+- [更新日志](#-更新日志)
+
+---
 
 ## ✨ 功能特性
 
-- 🚀 多种运行模式：优化模式、并行模式、流式模式
-- 📥 自动从 DataWeave 下载标注数据
-- 📤 SFTP 批量上传到远程服务器
-- 🔍 标注质量自动检查
-- 📊 飞书多维表格同步（默认启用）
-- 📝 处理日志和进度追踪
+### 核心功能
+- 🚀 **多种运行模式**：优化模式、并行模式、流式模式，适应不同场景
+- 📥 **智能下载**：自动从 DataWeave 下载标注数据，支持断点续传
+- 📤 **高效上传**：SFTP 批量上传到远程服务器，支持断点续传和完整性验证
+- 🔍 **质量检查**：自动化标注质量检查，生成详细报告
+- 📊 **实时追踪**：飞书多维表格实时同步，支持属性和路径累积
+- 💾 **NAS 备份**：自动备份到群晖 NAS，支持增量备份
+- 📝 **完整日志**：详细的处理日志和进度追踪
+
+### 高级特性
+- ✅ **断点续传**：下载和上传均支持断点续传，网络中断后可继续
+- ✅ **完整性验证**：MD5 校验确保数据传输完整性
+- ✅ **智能重连**：SSH 连接自动检测和重连
+- ✅ **文件名规范化**：自动处理带后缀的文件名（如 `_rere_0`）
+- ✅ **跨目录处理**：支持将同一数据包处理到多个目标目录
+- ✅ **并发控制**：可配置的并发数，平衡效率和稳定性
+
+---
 
 ## 📁 项目结构
 
 ```
 annotapipe/
-├── run_pipeline.py          # 命令行入口
-├── configs/                  # 配置文件
-│   ├── pipeline.yaml        # 流水线主配置
-│   ├── check_rules.yaml     # 标注检查规则
-│   ├── feishu.yaml          # 飞书配置
-│   └── .env.example         # 环境变量模板
-├── src/
-│   ├── pipeline/            # 核心流水线模块
-│   │   ├── runner.py        # 流水线运行器
-│   │   ├── downloader.py    # 文件下载器
-│   │   ├── uploader.py      # 文件上传器
-│   │   ├── processor.py     # 远程处理器
-│   │   ├── checker.py       # 标注检查器
-│   │   ├── tracker.py       # 进度追踪器
-│   │   └── ...
-│   └── remote_scripts/      # 远程执行脚本
-│       ├── zip_worker.py
-│       └── annotation_checker.py
-├── tools/                   # 辅助工具
-│   ├── annotation_stats.py  # 标注统计
-│   ├── debug_feishu.py      # 飞书表格调试
-│   └── keyframe_counter.py  # 关键帧计数
-├── tests/                   # 测试脚本
-└── data/                    # 数据目录
+├── run_pipeline.py              # 🚀 命令行入口
+├── requirements.txt             # 📦 Python 依赖
+├── .gitignore                   # 🔒 Git 忽略规则
+│
+├── configs/                     # ⚙️ 配置文件目录
+│   ├── pipeline.yaml           # 流水线主配置
+│   ├── check_rules.yaml        # 标注检查规则
+│   ├── feishu.yaml             # 飞书配置
+│   ├── nas_backup.yaml         # NAS 备份配置
+│   ├── upload_config.yaml      # DataWeave 上传配置
+│   ├── .env.example            # 环境变量模板
+│   └── README.md               # 配置文档
+│
+├── src/                         # 📚 源代码目录
+│   ├── __init__.py
+│   ├── pipeline/               # 核心流水线模块
+│   │   ├── __init__.py
+│   │   ├── runner.py           # 流水线运行器
+│   │   ├── downloader.py       # 文件下载器
+│   │   ├── uploader.py         # 文件上传器
+│   │   ├── processor.py        # 远程处理器
+│   │   ├── checker.py          # 标注检查器
+│   │   ├── tracker.py          # 飞书追踪器
+│   │   ├── ssh_client.py       # SSH 客户端
+│   │   ├── nas_backup.py       # NAS 备份模块
+│   │   ├── server_logger.py    # 服务器日志
+│   │   ├── state.py            # 状态管理
+│   │   ├── config.py           # 配置管理
+│   │   ├── utils.py            # 工具函数
+│   │   └── README.md           # 模块文档
+│   │
+│   └── remote_scripts/         # 远程执行脚本
+│       ├── zip_worker.py       # ZIP 处理脚本
+│       └── annotation_checker.py  # 标注检查脚本
+│
+├── tools/                       # 🛠️ 辅助工具
+│   ├── upload_to_dataweave.py  # DataWeave 上传工具
+│   ├── organize_zips.py        # ZIP 文件整理工具
+│   ├── backup_to_nas.py        # NAS 备份工具
+│   ├── annotation_stats.py     # 标注统计工具
+│   ├── keyframe_counter.py     # 关键帧计数工具
+│   └── debug_feishu.py         # 飞书调试工具
+│
+├── tests/                       # 🧪 测试脚本
+│   ├── test_download_speed.py
+│   ├── test_upload_speed.py
+│   ├── test_resume_upload.py
+│   ├── test_nas_backup.py
+│   └── test_upload_speed_optimized.py
+│
+├── examples/                    # 📝 示例文件
+│   └── *.json                  # 示例 JSON 文件
+│
+└── batch_*.sh                   # 🔄 批处理脚本
 ```
 
-## 📦 依赖
-
-| 包名 | 说明 |
-|------|------|
-| `requests` | HTTP 请求（下载文件） |
-| `pyyaml` | YAML 配置解析 |
-| `paramiko` | SSH/SFTP 客户端 |
-| `numpy` | 数值计算（标注检查） |
-
-新环境部署只需：
-
-```bash
-pip install -r requirements.txt
-```
-
+---
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 1. 环境要求
+
+- **Python**: 3.8+
+- **操作系统**: Linux (推荐 Ubuntu 20.04+)
+- **系统工具**: `cifs-utils` (用于 NAS 挂载)
+
+### 2. 安装依赖
 
 ```bash
+# 克隆项目
+git clone https://github.com/EDuAPo/annotapipe.git
+cd annotapipe
+
+# 安装 Python 依赖
 pip install -r requirements.txt
+
+# 安装系统依赖（用于 NAS 备份）
+sudo apt install cifs-utils
 ```
 
-### 2. 配置环境
+### 3. 配置环境
 
 ```bash
 # 复制环境变量模板
@@ -77,10 +140,27 @@ cp configs/.env.example configs/.env
 vim configs/.env
 ```
 
-### 3. 运行流水线
+**必需的环境变量**：
+```bash
+# DataWeave 凭证
+DATAWEAVE_USERNAME=your_username
+DATAWEAVE_PASSWORD=your_password
+
+# 服务器 SSH 凭证
+SERVER_PRIMARY_PASSWORD=your_ssh_password
+
+# 飞书应用凭证
+FEISHU_APP_ID=your_app_id
+FEISHU_APP_SECRET=your_app_secret
+
+# NAS 凭证（可选，用于备份）
+NAS_PASSWORD=your_nas_password
+```
+
+### 4. 运行流水线
 
 ```bash
-# 基本用法
+# 基本用法（推荐）
 python run_pipeline.py --json_dir ./data
 
 # 指定配置文件
@@ -89,87 +169,177 @@ python run_pipeline.py --json_dir ./data --config configs/pipeline.yaml
 # 并行模式，4 个工作线程
 python run_pipeline.py --json_dir ./data --mode parallel --workers 4
 
-# 流式模式
+# 流式模式（适合调试）
 python run_pipeline.py --json_dir ./data --mode streaming
 ```
 
+---
+
 ## ⚙️ 运行模式
 
-| 模式 | 说明 | 适用场景 |
-|------|------|----------|
-| `optimized` | 下载并行 + 服务器操作串行（默认） | 推荐，平衡效率和稳定性 |
-| `parallel` | 全并行模式，多线程独立处理 | 大批量数据处理 |
-| `streaming` | 流式模式，逐个处理 | 调试或小批量数据 |
+| 模式 | 说明 | 适用场景 | 并发策略 |
+|------|------|----------|----------|
+| **optimized** | 下载并行 + 服务器操作串行（默认） | 推荐，平衡效率和稳定性 | 下载阶段并行，处理阶段串行 |
+| **parallel** | 全并行模式，多线程独立处理 | 大批量数据处理 | 全流程并行，使用连接池 |
+| **streaming** | 流式模式，逐个处理 | 调试或小批量数据 | 完全串行 |
+
+### 模式选择建议
+
+- **日常使用**: `optimized` 模式（默认）
+- **大批量处理**: `parallel` 模式 + 增加 workers
+- **调试问题**: `streaming` 模式
+
+---
 
 ## 📋 命令行参数
 
-| 参数 | 简写 | 说明 | 默认值 |
-|------|------|------|--------|
-| `--json_dir` | `-j` | JSON 文件目录（必需） | - |
-| `--zip_dir` | `-z` | 本地 ZIP 缓存目录 | 自动 |
-| `--mode` | `-m` | 运行模式 | `optimized` |
-| `--workers` | `-w` | 并发数 | `3` |
-| `--config` | `-c` | 配置文件路径 | - |
+| 参数 | 简写 | 说明 | 默认值 | 示例 |
+|------|------|------|--------|------|
+| `--json_dir` | `-j` | JSON 文件目录（必需） | - | `./data` |
+| `--zip_dir` | `-z` | 本地 ZIP 缓存目录 | 自动生成 | `./temp/zips` |
+| `--mode` | `-m` | 运行模式 | `optimized` | `parallel` |
+| `--workers` | `-w` | 并发数 | `3` | `4` |
+| `--config` | `-c` | 配置文件路径 | 自动查找 | `configs/pipeline.yaml` |
+
+### 使用示例
+
+```bash
+# 完整参数示例
+python run_pipeline.py \
+  --json_dir /path/to/json/files \
+  --zip_dir /path/to/zip/cache \
+  --mode optimized \
+  --workers 3 \
+  --config configs/pipeline.yaml
+
+# 简化版本（使用默认值）
+python run_pipeline.py -j ./data -m parallel -w 4
+```
+
+---
 
 ## 🔧 配置说明
 
 详细配置说明请参考 [configs/README.md](configs/README.md)
 
-### 环境变量
+### 主要配置文件
 
-| 变量名 | 说明 |
-|--------|------|
-| `DATAWEAVE_USERNAME` | DataWeave 用户名 |
-| `DATAWEAVE_PASSWORD` | DataWeave 密码 |
-| `SERVER_PRIMARY_PASSWORD` | 主服务器 SSH 密码 |
-| `FEISHU_APP_ID` | 飞书应用 ID |
-| `FEISHU_APP_SECRET` | 飞书应用密钥 |
+#### 1. pipeline.yaml - 流水线配置
+
+```yaml
+# 服务器配置
+servers:
+  primary:
+    ip: "222.223.112.212"
+    user: "user"
+    zip_dir: "/data02/zips"
+    process_dir: "/data02/process"
+    final_dir: "/data02/dataset/scenesnew"
+
+# DataWeave 配置
+dataweave:
+  username: "${DATAWEAVE_USERNAME}"
+  password: "${DATAWEAVE_PASSWORD}"
+  path_templates:
+    - "dataweave://my/TO_RERE/未上传平台/{filename}"
+    - "dataweave://my/TO_RERE/7Lidar_data/{filename}"
+
+# 处理配置
+pipeline:
+  max_workers: 3
+  rename_json: true
+  zip_after_process: "rename"  # rename | delete | keep
+```
+
+#### 2. feishu.yaml - 飞书配置
+
+```yaml
+feishu:
+  app_id: "${FEISHU_APP_ID}"
+  app_secret: "${FEISHU_APP_SECRET}"
+  app_token: "your_app_token"
+  table_id: "your_table_id"
+  
+  # 字段映射
+  field_mapping:
+    name: "数据包名称"
+    annotation_status: "标注情况"
+    keyframe_count: "关键帧数"
+```
+
+#### 3. nas_backup.yaml - NAS 备份配置
+
+```yaml
+nas:
+  enabled: true
+  host: "192.168.2.41"
+  share: "public"
+  username: "SYSC"
+  
+path_mappings:
+  "/data02/dataset/scenesnew": "from_rere/boxes"
+  "/data02/dataset/lines": "from_rere/lines"
+```
+
+---
 
 ## 📊 处理流程
 
+### 完整流程图
+
 ```
-JSON 文件 → 下载 ZIP → 上传服务器 → 解压处理 → 质量检查 → 移动到最终目录
-                                                    ↓
-                                            记录和追踪（本地/飞书）
+┌─────────────┐
+│ JSON 文件   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐     ┌──────────────┐
+│ 下载 ZIP    │────▶│ 本地缓存     │
+└──────┬──────┘     └──────────────┘
+       │
+       ▼
+┌─────────────┐     ┌──────────────┐
+│ 上传服务器  │────▶│ 服务器 ZIP   │
+└──────┬──────┘     └──────────────┘
+       │
+       ▼
+┌─────────────┐
+│ 解压处理    │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐     ┌──────────────┐
+│ 质量检查    │────▶│ 检查报告     │
+└──────┬──────┘     └──────────────┘
+       │
+       ▼
+┌─────────────┐
+│ 移动到      │
+│ final_dir   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐     ┌──────────────┐
+│ NAS 备份    │────▶│ 备份完成     │
+│ (可选)      │     └──────────────┘
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│ 飞书同步    │
+└─────────────┘
 ```
-
-### 数据完整性保护
-
-#### 下载完整性
-- 验证文件大小与 `Content-Length` 一致
-- 使用 `zipfile.testzip()` 验证 ZIP 文件 CRC 校验
-- 下载失败自动重试 3 次
-
-#### 上传完整性
-- 上传到临时文件 `.uploading`，成功后才重命名
-- 验证文件大小（本地 vs 远程）
-- 验证 MD5 校验和（默认启用）
-- 失败时自动清理临时文件
-- 流水线启动时自动清理残留的临时文件
-
-#### 异常中断处理
-| 场景 | 处理方式 |
-|------|----------|
-| 上传中断 | 临时文件残留，下次启动时自动清理 |
-| 验证失败 | 删除临时文件，返回失败 |
-| 服务器已存在 | 跳过上传，继续处理 |
-
-### 飞书追踪
-
-流水线结束后自动同步到飞书多维表格：
-- 按"数据包名称"字段匹配，已存在则更新，不存在则新增
-- 跳过的数据（服务器已存在）也会被记录
-- 记录字段：数据包名称、标注情况、关键帧数、上传状态、更新时间
 
 ### 服务器端操作
 
 | 步骤 | 操作 | 说明 |
 |------|------|------|
 | 1 | 脚本部署 | 上传 `zip_worker.py`、`annotation_checker.py` 到 `/tmp/` |
-| 2 | 状态检查 | 扫描已有 ZIP 和已完成目录，跳过重复处理 |
-| 3 | ZIP 处理 | 解压 ZIP，用新 JSON 替换 `sample.json` |
+| 2 | 状态检查 | 扫描已有 ZIP 和当前 final_dir，跳过重复处理 |
+| 3 | ZIP 处理 | 解压 ZIP，用新 JSON 替换或重命名为 `annotations.json` |
 | 4 | 质量检查 | 执行标注检查，生成报告到 `{process_dir}/reports/` |
 | 5 | 移动数据 | 检查通过后移动到最终目录（已存在则覆盖） |
+| 6 | 清理 ZIP | 根据配置重命名或删除原始 ZIP 文件 |
 
 ### 服务器目录结构
 
@@ -178,19 +348,339 @@ JSON 文件 → 下载 ZIP → 上传服务器 → 解压处理 → 质量检查
 ├── {zip_dir}/              # ZIP 存放目录
 │   ├── xxx.zip             # 待处理
 │   └── processed_xxx.zip   # 已处理（配置为 rename 时）
+│
 ├── {process_dir}/          # 处理中目录
 │   ├── {stem}/             # 解压后的数据
 │   └── reports/            # 检查报告
 │       └── report_{stem}.txt
+│
 └── {final_dir}/            # 最终目录（检查通过后）
     └── {stem}/             # 完成的数据
 ```
+
+---
+
+## 🛡️ 数据完整性保护
+
+### 断点续传机制
+
+#### 下载完整性
+- ✅ **断点续传**：使用 `.downloading` 临时文件标记
+- ✅ **分段验证**：验证已下载部分的 MD5
+- ✅ **文件大小验证**：下载完成后验证文件大小
+- ✅ **最终 MD5 验证**：计算完整文件 MD5 并与服务器对比
+- ✅ **ZIP 完整性**：使用 `zipfile.testzip()` 验证 CRC 校验
+- ✅ **原子操作**：验证通过后才重命名为正式文件
+
+#### 上传完整性
+- ✅ **断点续传**：使用 `.uploading` 临时文件标记
+- ✅ **分段验证**：验证已上传部分的 MD5
+- ✅ **文件大小验证**：上传完成后验证文件大小
+- ✅ **最终 MD5 验证**：计算完整文件 MD5 并与本地对比
+- ✅ **原子操作**：验证通过后才重命名为正式文件
+
+### 断点续传流程
+
+```
+1. 检测临时文件 (.downloading / .uploading)
+   ↓
+2. 获取已传输大小
+   ↓
+3. 验证已传输部分的 MD5 ⭐ 关键步骤
+   ↓
+4. MD5 匹配？
+   ├─ 是 → 从断点继续传输
+   └─ 否 → 删除临时文件，重新开始
+   ↓
+5. 传输完成后验证文件大小
+   ↓
+6. 最终验证完整文件 MD5
+   ↓
+7. 验证通过 → 重命名为正式文件
+```
+
+### 异常处理
+
+| 场景 | 处理方式 | 恢复策略 |
+|------|----------|----------|
+| 下载中断 | 保留 `.downloading` 临时文件 | 下次自动继续 |
+| 上传中断 | 保留 `.uploading` 临时文件 | 下次自动继续 |
+| MD5 不匹配 | 删除临时文件 | 重新传输 |
+| SSH 断开 | 自动重连 | 继续处理 |
+| 服务器已存在 | 跳过上传 | 继续处理 |
+
+---
+
+## 📊 飞书追踪
+
+### 功能特性
+
+- ✅ **实时同步**：每完成一个数据包立即同步飞书
+- ✅ **智能匹配**：按"数据包名称"字段匹配，支持模糊匹配（时间段）
+- ✅ **属性累积**：保留原有属性标记，新增当前属性
+- ✅ **路径累积**：保留原有路径标记，新增当前路径
+- ✅ **动态路径映射**：自动从 `pipeline.yaml` 读取 `final_dir` 并转换为飞书列名
+
+### 记录字段
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| 数据包名称 | 数据包标识 | `20251226_171321-171500` |
+| 标注情况 | 处理状态 | `已完成` / `检查不通过` |
+| 关键帧数 | 关键帧数量 | `150` |
+| 属性标记 | 数据属性（累积） | `拉框属性=True`, `盲区属性=True` |
+| 路径标记 | 上传路径（累积） | `上传data02/dataset/scenesnew=True` |
+| 更新时间 | 最后更新时间 | `2026-01-14 12:30:00` |
+
+### 属性和路径累积示例
+
+**第一次处理**：
+- json_dir 包含"拉框"
+- final_dir 是 `/data02/dataset/scenesnew`
+- 飞书标记：`拉框属性=True`, `上传data02/dataset/scenesnew=True`
+
+**第二次处理**：
+- json_dir 包含"盲区"
+- final_dir 是 `/data02/dataset/lines`
+- 飞书标记：`拉框属性=True`, `盲区属性=True`, `上传data02/dataset/scenesnew=True`, `上传data02/dataset/lines=True`
+
+---
+
+## 💾 NAS 备份
+
+### 功能特性
+
+- ✅ 自动挂载/卸载 NAS 共享目录
+- ✅ 支持路径映射（根据 final_dir 自动选择备份目标）
+- ✅ 使用 rsync 增量备份，高效可靠
+- ✅ 失败自动重试机制
+- ✅ 备份完成后自动卸载（可配置）
+- ✅ 详细的备份日志和进度追踪
+
+### 配置示例
+
+```yaml
+nas:
+  enabled: true
+  host: "192.168.2.41"
+  share: "public"
+  username: "SYSC"
+  
+  mount:
+    local_mount_point: "/mnt/nas_backup"
+    options: "vers=3.0,uid=1000,gid=1000"
+    auto_unmount: true
+
+path_mappings:
+  "/data02/dataset/scenesnew": "from_rere/boxes"
+  "/data02/dataset/lines": "from_rere/lines"
+
+backup:
+  mode: "incremental"
+  timing: "after_each"
+  rsync_options:
+    - "-av"
+    - "--progress"
+    - "--delete"
+  retry_count: 2
+  retry_delay: 5
+```
+
+### 系统要求
+
+```bash
+# 安装 CIFS 工具
+sudo apt install cifs-utils
+
+# 配置 sudo 免密码（可选，推荐）
+sudo visudo
+# 添加：your_username ALL=(ALL) NOPASSWD: /bin/mount, /bin/umount
+```
+
+---
+
+## 🛠️ 辅助工具
+
+### 1. DataWeave 上传工具
+
+用于从本地路径扫描 ZIP 文件并上传到 DataWeave 指定目录。
+
+```bash
+# 使用配置文件
+python tools/upload_to_dataweave.py
+
+# 指定参数
+python tools/upload_to_dataweave.py \
+  --local /media/zgw/T7/zips \
+  --target "dataweave://my/TO_RERE/未上传平台"
+
+# 启用调试模式
+python tools/upload_to_dataweave.py --debug
+```
+
+**功能特性**：
+- ✅ 递归搜索所有子目录中的 ZIP 文件
+- ✅ 自动检查是否已存在，避免重复上传
+- ✅ 自动重试机制（3次，指数退避）
+- ✅ 动态超时调整（根据文件大小）
+- ✅ Session 连接复用，提高稳定性
+
+### 2. ZIP 文件整理工具
+
+将所有子目录中的 ZIP 文件整理到一个目录中。
+
+```bash
+# 移动文件
+python tools/organize_zips.py \
+  --source /media/zgw/T71/0107out/ \
+  --target /media/zgw/T71/all_zips/
+
+# 复制文件（保留原文件）
+python tools/organize_zips.py \
+  --source /media/zgw/T71/0107out/ \
+  --target /media/zgw/T71/all_zips/ \
+  --copy
+```
+
+### 3. NAS 备份工具
+
+独立的 NAS 备份工具，可单独使用。
+
+```bash
+python tools/backup_to_nas.py \
+  --source /data02/dataset/scenesnew/20251226_171321-171500 \
+  --config configs/nas_backup.yaml
+```
+
+### 4. 标注统计工具
+
+统计标注数据的关键帧数量。
+
+```bash
+python tools/annotation_stats.py --dir /path/to/data
+```
+
+### 5. 飞书调试工具
+
+调试飞书表格连接和数据同步。
+
+```bash
+python tools/debug_feishu.py
+```
+
+---
+
+## 🔍 故障排除
+
+### 常见问题
+
+#### 1. SSH 连接失败
+
+**问题**：`SSH 未连接，无法上传`
+
+**解决方案**：
+- 检查 `.env` 文件中的 SSH 密码是否正确
+- 确认服务器 IP 和端口可访问
+- 系统会自动重连，通常无需手动干预
+
+#### 2. 下载失败
+
+**问题**：`无法获取下载URL`
+
+**解决方案**：
+- 检查 DataWeave 凭证是否正确
+- 确认文件在 DataWeave 中存在
+- 系统支持文件名规范化，会自动处理带后缀的文件名
+
+#### 3. NAS 挂载失败
+
+**问题**：`NAS 挂载失败`
+
+**解决方案**：
+```bash
+# 检查 cifs-utils 是否安装
+sudo apt install cifs-utils
+
+# 检查 NAS 是否可访问
+ping 192.168.2.41
+
+# 手动测试挂载
+sudo mount -t cifs //192.168.2.41/public /mnt/test \
+  -o username=SYSC,password=xxx,vers=3.0
+```
+
+#### 4. 飞书同步失败
+
+**问题**：`飞书同步失败`
+
+**解决方案**：
+- 检查飞书应用凭证是否正确
+- 确认 app_token 和 table_id 是否正确
+- 使用 `tools/debug_feishu.py` 调试连接
+
+### 日志查看
+
+```bash
+# 查看本地日志
+tail -f ~/.annotapipe/logs/pipeline.log
+
+# 查看服务器日志
+ssh user@server "tail -f /data02/logs/pipeline.log"
+```
+
+---
+
+## 📝 更新日志
+
+### v1.0.1 (2026-01-14)
+
+**新增功能**：
+- ✨ 文件名规范化：自动处理带后缀的文件名（如 `_rere_0`）
+- ✨ SSH 自动重连：检测到连接断开时自动重连
+- ✨ 连接作用域修复：确保 SSH 连接在整个处理流程中保持打开
+
+**改进**：
+- 🔧 优化错误处理和日志输出
+- 🔧 改进断点续传的可靠性
+- 📚 更新文档，添加故障排除章节
+
+### v1.0.0 (2026-01-10)
+
+**核心功能**：
+- 🚀 多种运行模式（optimized/parallel/streaming）
+- 📥 断点续传下载
+- 📤 断点续传上传
+- 🔍 标注质量检查
+- 📊 飞书实时同步
+- 💾 NAS 自动备份
+
+---
 
 ## 📖 更多文档
 
 - [Pipeline 模块详解](src/pipeline/README.md)
 - [配置文件说明](configs/README.md)
 
-## License
+---
 
-MIT
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+---
+
+## 📄 License
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+## 👥 作者
+
+EDuAPo Team
+
+---
+
+## 🙏 致谢
+
+感谢所有为这个项目做出贡献的开发者！

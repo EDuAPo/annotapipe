@@ -48,15 +48,15 @@ field_mapping:
   盲区属性: "fld6yDTNc4"
   上传nas: "fldtt8M8si"
   上传data02/dataset/scenesnew: "fldOw27qgJ"
-  上传dataset02/dataset/lines: "fldq6i04Yu"
+  上传data02/dataset/lines: "fldq6i04Yu"
   更新时间: "fldBF32bL5"
 
 # =============================================================================
-# 当前上传路径配置
+# 当前上传路径配置（已废弃）
 # =============================================================================
-# 用于飞书表格中标记数据上传到哪个服务器路径
-# 可选值: data02/dataset/scenesnew, dataset02/dataset/lines
-current_upload_path: "data02/dataset/scenesnew"
+# 注意：此配置已废弃，系统会自动从 pipeline.yaml 中读取 final_dir 并转换为飞书列名
+# 例如：/data02/dataset/scenesnew -> 上传data02/dataset/scenesnew
+# current_upload_path: "data02/dataset/scenesnew"  # 已废弃，请勿使用
 
 # =============================================================================
 # 数据属性关键词配置

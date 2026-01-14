@@ -1,0 +1,53 @@
+# NAS备份配置
+# 用于将处理完成的数据备份到群晖NAS
+
+# NAS连接信息
+nas:
+  enabled: true  # 是否启用NAS备份
+  host: "192.168.2.41"
+  share: "public"  # SMB共享名称
+  username: "SYSC"
+  # 密码存储在环境变量 NAS_PASSWORD 中
+  
+  # 挂载配置
+  mount:
+    local_mount_point: "/mnt/nas_backup"  # 本地挂载点
+    options: "vers=3.0,uid=1000,gid=1000,file_mode=0755,dir_mode=0755"  # 挂载选项
+    auto_unmount: true  # 备份完成后自动卸载
+
+# 路径映射配置
+# 格式: final_dir路径 -> NAS目标路径（相对于共享根目录）
+path_mappings:
+  "/data02/dataset/scenesnew": "from_rere/boxes"
+  "/data02/dataset/lines": "from_rere/lines"
+  
+
+# 备份策略
+backup:
+  mode: "incremental"  # incremental(增量) 或 full(全量)
+  timing: "after_each"  # after_each(每个数据包完成后) 或 after_all(所有完成后)
+  
+  # rsync选项（优化大文件传输）
+  rsync_options:
+    - "-av"  # archive + verbose
+    - "--progress"  # 显示进度
+    - "--partial"  # 保留部分传输的文件（支持断点续传）
+    - "--partial-dir=.rsync-partial"  # 部分文件存储目录
+    - "--checksum"  # 使用校验和验证文件完整性（而不仅仅是时间戳和大小）
+    - "--delete"  # 删除目标中多余的文件
+    - "--exclude=*.tmp"  # 排除临时文件
+    - "--exclude=.DS_Store"  # 排除macOS文件
+    - "--exclude=.rsync-partial/"  # 排除rsync临时目录
+    - "--timeout=300"  # 超时设置（秒）
+    - "--contimeout=60"  # 连接超时（秒）
+  
+  # 错误处理
+  on_error: "continue"  # continue(继续处理其他数据包) 或 stop(停止流水线)
+  retry_count: 3  # 失败重试次数（增加到3次以应对大文件传输）
+  retry_delay: 10  # 重试延迟（秒，增加到10秒）
+
+# 日志配置
+logging:
+  enabled: true
+  log_file: "/tmp/nas_backup.log"  # 备份日志文件
+  verbose: true  # 详细日志

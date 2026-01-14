@@ -1,14 +1,38 @@
-# AnnotaPipe 依赖
-# 安装: pip install -r requirements.txt
+# AnnotaPipe Dependencies
+# Installation: pip install -r requirements.txt
 
-# HTTP 请求（下载文件、飞书 API）
+# Core Dependencies
+# ================
+
+# HTTP requests (DataWeave API, Feishu API)
 requests>=2.28.0
 
-# YAML 配置解析
+# YAML configuration parsing
 pyyaml>=6.0
 
-# SSH/SFTP 客户端（远程服务器操作）
+# SSH/SFTP client (remote server operations)
 paramiko>=3.0.0
 
-# 数值计算（标注检查）
+# Numerical computing (annotation checking)
 numpy>=1.21.0
+
+# Environment variable management
+python-dotenv>=0.19.0
+
+# Progress bars (optional but recommended)
+tqdm>=4.62.0
+
+# Development Dependencies (Optional)
+# ===================================
+# Uncomment if needed for development
+
+# pytest>=7.0.0              # Testing framework
+# black>=22.0.0              # Code formatter
+# flake8>=4.0.0              # Linting
+# mypy>=0.950                # Type checking
+
+# System Requirements
+# ===================
+# - Python 3.8+
+# - cifs-utils (for NAS mounting): sudo apt install cifs-utils
+# - rsync (for NAS backup): usually pre-installed on Linux

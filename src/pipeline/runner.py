@@ -20,6 +20,8 @@ from .processor import RemoteProcessor
 from .server_logger import ServerLogger
 from .tracker import Tracker, TrackingRecord
 from .state import StateManager, ProcessStatus
+from .nas_backup import NASBackup
+from .utils import normalize_zip_name
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,8 @@ class PipelineResult:
     check_passed: List[str] = field(default_factory=list)
     check_failed: List[str] = field(default_factory=list)
     moved_to_final: List[str] = field(default_factory=list)
+    backed_up: List[str] = field(default_factory=list)  # NAS备份成功的数据包
+    backup_failed: List[str] = field(default_factory=list)  # NAS备份失败的数据包
     keyframe_counts: Dict[str, int] = field(default_factory=dict)
     errors: Dict[str, List[tuple]] = field(default_factory=dict)
     
@@ -154,6 +158,7 @@ class PipelineRunner:
         self._deploy_lock = threading.Lock()
         self._scripts_deployed = False
         self.server_logger: Optional[ServerLogger] = None
+        self.nas_backup: Optional[NASBackup] = None
         
         # 状态管理器（断点续传支持）
         self.state_manager = StateManager(base_dir)
@@ -178,89 +183,93 @@ class PipelineRunner:
         
         print(f"  📋 共 {len(json_files)} 个文件")
         
-        with SSHClient() as ssh:
-            if not ssh.is_connected:
-                print("  ✗ 无法连接服务器")
-                return self.result
+        # 初始化NAS备份（使用上下文管理器）
+        with NASBackup() as nas_backup:
+            self.nas_backup = nas_backup
             
-            print(f"  🔗 已连接服务器: {ssh.server.ip}")
-            
-            processor = RemoteProcessor(ssh, self.config)
-            processor.deploy_scripts()
-            
-            # 初始化服务器日志
-            self.server_logger = ServerLogger(ssh)
-            print(f"  📋 服务器日志: {self.server_logger.log_file}")
-            
-            # 确保目录存在
-            ssh.mkdir_p(ssh.server.zip_dir)
-            ssh.mkdir_p(ssh.server.process_dir)
-            
-            # 注意：不再自动清理临时文件，以支持断点续传
-            # 如需清理，请手动调用 uploader.cleanup_incomplete(force=True)
-            
-            # 获取服务器状态
-            state = processor.get_server_state()
-            print(f"  📊 服务器: {len(state['zip_files'])} ZIPs / {len(state['processed_dirs'])} 已完成")
-            
-            # 统计本地已下载的文件（只统计数量，不验证完整性）
-            local_zip_files = list(self.local_zip_dir.glob("*.zip"))
-            print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
-            
-            # 过滤需要处理的文件，跳过的文件立即更新飞书
-            files_to_process = []
-            tracker = Tracker()
-            for json_file in json_files:
-                stem = json_file.stem
-                if stem in state['processed_dirs']:
-                    # 尝试获取关键帧数量，如果失败则重新处理
-                    logger.info(f"[{stem}] 检查final_dir中的数据完整性...")
-                    kf = processor.get_keyframe_count(f"{ssh.server.final_dir}/{stem}")
-                    if kf > 0:
-                        # 服务器上已完成且数据完整的文件，记录为跳过
-                        logger.info(f"[{stem}] ✓ 已在final_dir中 (关键帧: {kf})，跳过所有步骤")
-                        self.result.skipped_server_exists.append(stem)
-                        self.result.check_passed.append(stem)
-                        self.result.keyframe_counts[stem] = kf
-                        # 立即更新飞书
-                        logger.info(f"[{stem}] 更新飞书表格...")
-                        self._track_single_to_feishu(tracker, stem, silent=True)
-                        logger.info(f"[{stem}] ✓ 飞书已更新")
+            with SSHClient() as ssh:
+                if not ssh.is_connected:
+                    print("  ✗ 无法连接服务器")
+                    return self.result
+                
+                print(f"  🔗 已连接服务器: {ssh.server.ip}")
+                
+                processor = RemoteProcessor(ssh, self.config)
+                processor.deploy_scripts()
+                
+                # 初始化服务器日志
+                self.server_logger = ServerLogger(ssh)
+                print(f"  📋 服务器日志: {self.server_logger.log_file}")
+                
+                # 确保目录存在
+                ssh.mkdir_p(ssh.server.zip_dir)
+                ssh.mkdir_p(ssh.server.process_dir)
+                
+                # 注意：不再自动清理临时文件，以支持断点续传
+                # 如需清理，请手动调用 uploader.cleanup_incomplete(force=True)
+                
+                # 获取服务器状态
+                state = processor.get_server_state()
+                print(f"  📊 服务器: {len(state['zip_files'])} ZIPs / {len(state['processed_dirs'])} 已完成")
+                
+                # 统计本地已下载的文件（只统计数量，不验证完整性）
+                local_zip_files = list(self.local_zip_dir.glob("*.zip"))
+                print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
+                
+                # 过滤需要处理的文件，跳过的文件立即更新飞书
+                files_to_process = []
+                tracker = Tracker()
+                for json_file in json_files:
+                    stem = json_file.stem
+                    if stem in state['processed_dirs']:
+                        # 尝试获取关键帧数量，如果失败则重新处理
+                        logger.info(f"[{stem}] 检查final_dir中的数据完整性...")
+                        kf = processor.get_keyframe_count(f"{ssh.server.final_dir}/{stem}")
+                        if kf > 0:
+                            # 服务器上已完成且数据完整的文件，记录为跳过
+                            logger.info(f"[{stem}] ✓ 已在final_dir中 (关键帧: {kf})，跳过所有步骤")
+                            self.result.skipped_server_exists.append(stem)
+                            self.result.check_passed.append(stem)
+                            self.result.keyframe_counts[stem] = kf
+                            # 立即更新飞书
+                            logger.info(f"[{stem}] 更新飞书表格...")
+                            self._track_single_to_feishu(tracker, stem, silent=True)
+                            logger.info(f"[{stem}] ✓ 飞书已更新")
+                        else:
+                            # 数据不完整，需要重新处理
+                            logger.warning(f"[{stem}] ✗ 在final_dir但数据不完整，将重新处理")
+                            files_to_process.append((json_file, stem))
                     else:
-                        # 数据不完整，需要重新处理
-                        logger.warning(f"[{stem}] ✗ 在final_dir但数据不完整，将重新处理")
                         files_to_process.append((json_file, stem))
+                
+                skipped = len(json_files) - len(files_to_process)
+                if skipped > 0:
+                    print(f"  ⏭ 跳过(服务器已完成): {skipped} 个")
+                
+                if not files_to_process:
+                    print("  ✓ 所有文件都已处理完成")
+                    self._print_summary()
+                    return self.result
+                
+                # 计算实际需要下载的数量
+                local_stems = set(f.stem for f in local_zip_files)
+                need_download = 0
+                for json_file, stem in files_to_process:
+                    zip_name = f"{stem}.zip"
+                    if zip_name not in state['zip_files'] and stem not in local_stems:
+                        need_download += 1
+                
+                print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
+                if mode != "streaming":
+                    print(f"  🧵 并发数: {workers}")
+                print()
+                
+                if mode == "optimized":
+                    self._run_optimized(ssh, processor, files_to_process, state, workers)
+                elif mode == "parallel":
+                    self._run_parallel(processor, files_to_process, state, workers)
                 else:
-                    files_to_process.append((json_file, stem))
-            
-            skipped = len(json_files) - len(files_to_process)
-            if skipped > 0:
-                print(f"  ⏭ 跳过(服务器已完成): {skipped} 个")
-            
-            if not files_to_process:
-                print("  ✓ 所有文件都已处理完成")
-                self._print_summary()
-                return self.result
-            
-            # 计算实际需要下载的数量
-            local_stems = set(f.stem for f in local_zip_files)
-            need_download = 0
-            for json_file, stem in files_to_process:
-                zip_name = f"{stem}.zip"
-                if zip_name not in state['zip_files'] and stem not in local_stems:
-                    need_download += 1
-            
-            print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
-            if mode != "streaming":
-                print(f"  🧵 并发数: {workers}")
-            print()
-            
-            if mode == "optimized":
-                self._run_optimized(ssh, processor, files_to_process, state, workers)
-            elif mode == "parallel":
-                self._run_parallel(processor, files_to_process, state, workers)
-            else:
-                self._run_streaming(ssh, processor, files_to_process, state)
+                    self._run_streaming(ssh, processor, files_to_process, state)
         
         self._print_summary()
         
@@ -282,7 +291,9 @@ class PipelineRunner:
         skipped_local = 0
         skipped_server = 0
         for json_file, stem in files:
-            zip_name = f"{stem}.zip"
+            # 规范化文件名用于查找ZIP
+            normalized_stem = normalize_zip_name(stem)
+            zip_name = f"{normalized_stem}.zip"
             local_zip = self.local_zip_dir / zip_name
             
             if zip_name in state['zip_files']:
@@ -479,7 +490,9 @@ class PipelineRunner:
         need_upload_list = []
         
         for json_file, stem in files:
-            zip_name = f"{stem}.zip"
+            # 规范化文件名用于查找ZIP
+            normalized_stem = normalize_zip_name(stem)
+            zip_name = f"{normalized_stem}.zip"
             if zip_name not in state['zip_files'] and stem not in local_stems:
                 need_download_list.append(stem)
             if zip_name not in state['zip_files']:
@@ -521,7 +534,9 @@ class PipelineRunner:
                         json_file: Path, stem: str, state: Dict,
                         current_idx: int = 0, total_count: int = 0) -> bool:
         """处理单个文件（使用共享SSH连接）"""
-        zip_name = f"{stem}.zip"
+        # 规范化文件名用于查找ZIP
+        normalized_stem = normalize_zip_name(stem)
+        zip_name = f"{normalized_stem}.zip"
         local_zip = self.local_zip_dir / zip_name
         server = ssh.server
         
@@ -681,6 +696,29 @@ class PipelineRunner:
                 if self.server_logger:
                     self.server_logger.log_success(stem, kf)
                 self.state_manager.update(stem, ProcessStatus.COMPLETED)
+                
+                # 备份到NAS（如果启用）
+                if self.nas_backup and self.nas_backup.is_enabled:
+                    print(f"  💾 备份到NAS: {stem}")
+                    logger.info(f"[{stem}] 💾 备份到NAS...")
+                    backup_success, backup_msg = self.nas_backup.backup_data(
+                        source_dir=dst,
+                        final_dir=server.final_dir,
+                        data_name=stem
+                    )
+                    if backup_success:
+                        print(f"  ✓ NAS备份成功: {stem}")
+                        logger.info(f"[{stem}] ✓ NAS备份成功")
+                        self.result.backed_up.append(stem)
+                    else:
+                        print(f"  ✗ NAS备份失败: {stem} - {backup_msg}")
+                        logger.warning(f"[{stem}] ✗ NAS备份失败: {backup_msg}")
+                        self.result.backup_failed.append(stem)
+                        # 根据配置决定是否继续
+                        backup_config = self.nas_backup.config.get('backup', {})
+                        if backup_config.get('on_error', 'continue') == 'stop':
+                            self.result.log_error(stem, "NAS备份", backup_msg)
+                            return False
             else:
                 logger.error(f"[{stem}] ✗ 移动失败: {dst}")
                 self.result.log_error(stem, "移动", dst)
@@ -751,6 +789,8 @@ class PipelineRunner:
             ("✓ 检查通过", len(self.result.check_passed)),
             ("✗ 检查失败", len(self.result.check_failed)),
             ("📁 已移动", len(self.result.moved_to_final)),
+            ("💾 NAS备份成功", len(self.result.backed_up)),
+            ("💾 NAS备份失败", len(self.result.backup_failed)),
         ]
         
         total_kf = sum(self.result.keyframe_counts.values())

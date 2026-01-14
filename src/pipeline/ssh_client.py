@@ -341,16 +341,245 @@ class SSHClient:
         return len(files)
     
     def download_file(self, remote_path: str, local_path: str,
-                      progress_callback=None) -> bool:
-        """下载文件"""
+                      progress_callback=None, verify: bool = True,
+                      resume: bool = True, chunk_size: int = 32 * 1024 * 1024) -> bool:
+        """
+        下载文件（支持断点续传 + 完整性验证）
+        
+        Args:
+            remote_path: 远程文件路径
+            local_path: 本地文件路径
+            progress_callback: 进度回调 (transferred, total)
+            verify: 是否验证完整性（默认启用）
+            resume: 是否启用断点续传（默认启用）
+            chunk_size: 传输分块大小，默认 32MB
+        
+        流程:
+        1. 获取远程文件大小
+        2. 检查本地临时文件，获取已下载大小
+        3. 验证已下载部分的完整性
+        4. 从断点位置继续下载
+        5. 验证文件大小
+        6. 最终验证完整文件 MD5
+        7. 成功后重命名为正式文件
+        """
+        import hashlib
+        import time
+        
         if not self.is_connected:
+            logger.error("❌ SSH 未连接，无法下载")
             return False
         
+        filename = Path(remote_path).name
+        temp_path = f"{local_path}.downloading"
+        
+        def format_size(size: int) -> str:
+            """格式化文件大小"""
+            if size >= 1024**3:
+                return f"{size / (1024**3):.2f}GB"
+            elif size >= 1024**2:
+                return f"{size / (1024**2):.2f}MB"
+            else:
+                return f"{size / 1024:.2f}KB"
+        
+        def format_speed(speed: float) -> str:
+            """格式化速度"""
+            if speed >= 1024**2:
+                return f"{speed / (1024**2):.2f}MB/s"
+            elif speed >= 1024:
+                return f"{speed / 1024:.2f}KB/s"
+            else:
+                return f"{speed:.2f}B/s"
+        
+        def calc_file_md5(filepath: str, max_bytes: int = None) -> str:
+            """计算文件 MD5（可指定最大字节数）"""
+            md5_hash = hashlib.md5()
+            bytes_read = 0
+            with open(filepath, 'rb') as f:
+                while True:
+                    if max_bytes and bytes_read >= max_bytes:
+                        break
+                    read_size = chunk_size
+                    if max_bytes:
+                        read_size = min(chunk_size, max_bytes - bytes_read)
+                    data = f.read(read_size)
+                    if not data:
+                        break
+                    md5_hash.update(data)
+                    bytes_read += len(data)
+            return md5_hash.hexdigest()
+        
         try:
-            self._sftp.get(remote_path, str(local_path), callback=progress_callback)
+            # 获取远程文件大小
+            remote_stat = self._sftp.stat(remote_path)
+            remote_size = remote_stat.st_size
+            
+            logger.info(f"📥 开始下载: {filename} ({format_size(remote_size)})")
+            logger.info(f"   远程路径: {remote_path}")
+            logger.info(f"   本地路径: {local_path}")
+            
+            # 检查已下载大小（断点续传）
+            downloaded_size = 0
+            if resume and Path(temp_path).exists():
+                downloaded_size = Path(temp_path).stat().st_size
+                logger.info(f"📁 发现临时文件: {format_size(downloaded_size)}")
+            else:
+                logger.info(f"📁 无临时文件，从头开始下载")
+            
+            # 验证已下载部分的完整性
+            if downloaded_size > 0 and verify:
+                logger.info(f"🔍 验证已下载部分: {format_size(downloaded_size)}...")
+                
+                # 计算本地已下载部分的 MD5
+                logger.info(f"   计算本地 MD5 (前 {format_size(downloaded_size)})...")
+                verify_start = time.time()
+                local_partial_md5 = calc_file_md5(temp_path, downloaded_size)
+                logger.info(f"   本地 MD5: {local_partial_md5[:16]}... (耗时 {time.time() - verify_start:.1f}秒)")
+                
+                # 计算远程对应部分的 MD5
+                logger.info(f"   计算远程 MD5...")
+                verify_start = time.time()
+                status, remote_partial_md5, err = self.exec_command(
+                    f"head -c {downloaded_size} '{remote_path}' | md5sum | cut -d' ' -f1",
+                    timeout=3600
+                )
+                
+                if status != 0:
+                    logger.warning(f"⚠️ 远程 MD5 计算失败: {err}")
+                    logger.warning(f"⚠️ 将删除临时文件，重新下载")
+                    Path(temp_path).unlink()
+                    downloaded_size = 0
+                elif remote_partial_md5.strip() != local_partial_md5:
+                    logger.warning(f"⚠️ MD5 不匹配!")
+                    logger.warning(f"   本地: {local_partial_md5}")
+                    logger.warning(f"   远程: {remote_partial_md5.strip()}")
+                    logger.warning(f"⚠️ 将删除临时文件，重新下载")
+                    Path(temp_path).unlink()
+                    downloaded_size = 0
+                else:
+                    logger.info(f"✅ 已下载部分校验通过 (耗时 {time.time() - verify_start:.1f}秒)")
+            
+            # 显示断点续传信息
+            if downloaded_size > 0:
+                remaining = remote_size - downloaded_size
+                logger.info(f"🔄 断点续传: {format_size(downloaded_size)} / {format_size(remote_size)} ({downloaded_size * 100 / remote_size:.1f}%)")
+                logger.info(f"   剩余: {format_size(remaining)}")
+            
+            # 如果已完成，跳过下载
+            if downloaded_size >= remote_size:
+                logger.info(f"✅ 文件已完整下载，跳过传输阶段")
+            else:
+                # 分块下载（支持断点续传）
+                start_time = time.time()
+                start_size = downloaded_size
+                last_log_time = start_time
+                
+                # 打开远程文件
+                with self._sftp.file(remote_path, 'rb') as remote_file:
+                    remote_file.seek(downloaded_size)
+                    
+                    # 追加模式打开本地文件
+                    mode = 'ab' if downloaded_size > 0 else 'wb'
+                    with open(temp_path, mode) as local_file:
+                        while downloaded_size < remote_size:
+                            read_size = min(chunk_size, remote_size - downloaded_size)
+                            chunk = remote_file.read(read_size)
+                            if not chunk:
+                                break
+                            local_file.write(chunk)
+                            downloaded_size += len(chunk)
+                            
+                            if progress_callback:
+                                progress_callback(downloaded_size, remote_size)
+                            
+                            # 每 10 秒输出一次进度日志
+                            current_time = time.time()
+                            if current_time - last_log_time >= 10:
+                                elapsed = current_time - start_time
+                                transferred = downloaded_size - start_size
+                                speed = transferred / elapsed if elapsed > 0 else 0
+                                remaining = remote_size - downloaded_size
+                                eta = remaining / speed if speed > 0 else 0
+                                
+                                logger.info(f"📊 下载进度: {format_size(downloaded_size)} / {format_size(remote_size)} "
+                                          f"({downloaded_size * 100 / remote_size:.1f}%) | "
+                                          f"速度: {format_speed(speed)} | "
+                                          f"剩余: {format_size(remaining)} | "
+                                          f"预计: {int(eta // 60)}分{int(eta % 60)}秒")
+                                last_log_time = current_time
+                
+                # 下载完成统计
+                elapsed = time.time() - start_time
+                transferred = downloaded_size - start_size
+                avg_speed = transferred / elapsed if elapsed > 0 else 0
+                logger.info(f"📥 传输完成: {format_size(transferred)} in {int(elapsed // 60)}分{int(elapsed % 60)}秒 (平均 {format_speed(avg_speed)})")
+            
+            # 最终验证文件大小
+            logger.info(f"🔍 验证文件大小...")
+            local_stat = Path(temp_path).stat()
+            if local_stat.st_size != remote_size:
+                logger.error(f"❌ 文件大小不匹配!")
+                logger.error(f"   远程: {remote_size} bytes ({format_size(remote_size)})")
+                logger.error(f"   本地: {local_stat.st_size} bytes ({format_size(local_stat.st_size)})")
+                raise Exception(f"下载不完整: 远程 {remote_size}, 本地 {local_stat.st_size}")
+            logger.info(f"✅ 文件大小匹配: {format_size(remote_size)}")
+            
+            # 最终完整性验证
+            if verify:
+                logger.info(f"🔍 最终完整性验证 (计算完整文件 MD5)...")
+                
+                # 计算远程完整文件 MD5
+                logger.info(f"   计算远程 MD5...")
+                md5_start = time.time()
+                status, remote_md5, err = self.exec_command(
+                    f"md5sum '{remote_path}' | cut -d' ' -f1",
+                    timeout=7200
+                )
+                
+                if status != 0:
+                    logger.error(f"❌ 远程 MD5 计算失败: {err}")
+                    raise Exception(f"最终 MD5 校验失败: 远程计算失败 - {err}")
+                
+                remote_md5 = remote_md5.strip()
+                logger.info(f"   远程 MD5: {remote_md5} (耗时 {time.time() - md5_start:.1f}秒)")
+                
+                # 计算本地完整文件 MD5
+                logger.info(f"   计算本地 MD5...")
+                md5_start = time.time()
+                local_md5 = calc_file_md5(temp_path)
+                logger.info(f"   本地 MD5: {local_md5} (耗时 {time.time() - md5_start:.1f}秒)")
+                
+                if local_md5 != remote_md5:
+                    logger.error(f"❌ MD5 校验失败!")
+                    logger.error(f"   远程: {remote_md5}")
+                    logger.error(f"   本地: {local_md5}")
+                    # MD5 不匹配说明数据损坏，删除临时文件
+                    Path(temp_path).unlink()
+                    raise Exception(f"最终 MD5 校验失败: 数据损坏，远程 {remote_md5}, 本地 {local_md5}")
+                
+                logger.info(f"✅ 完整性验证通过!")
+            
+            # 如果目标文件已存在，先删除
+            if Path(local_path).exists():
+                logger.info(f"🗑️ 删除已存在的目标文件...")
+                Path(local_path).unlink()
+            
+            # 重命名为正式文件（原子操作）
+            logger.info(f"📝 重命名临时文件为正式文件...")
+            Path(temp_path).rename(local_path)
+            
+            logger.info(f"🎉 下载成功: {filename}")
             return True
+            
         except Exception as e:
-            logger.error(f"下载失败: {e}")
+            # 断点续传模式下不删除临时文件，以便下次继续
+            if resume:
+                logger.info(f"💾 保留临时文件以便断点续传: {temp_path}")
+            else:
+                logger.info(f"🗑️ 清理临时文件...")
+                if Path(temp_path).exists():
+                    Path(temp_path).unlink()
+            logger.error(f"❌ 下载失败: {filename} - {e}")
             return False
     
     def file_exists(self, remote_path: str) -> bool:

@@ -97,6 +97,13 @@ class RemoteProcessor:
         在服务器上处理 ZIP 文件（如果有 ZIP）或仅处理 JSON
         返回 (success, error_message)
         """
+        # 确保SSH连接有效
+        if not self.ssh.is_connected:
+            logger.warning(f"[{stem}] SSH连接已断开，尝试重新连接...")
+            if not self.ssh.connect():
+                return False, "SSH连接失败"
+            logger.info(f"[{stem}] SSH重新连接成功")
+        
         server = self.ssh.server
         
         # 上传 JSON 文件

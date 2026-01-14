@@ -13,7 +13,7 @@ servers:
     zip_dir: "/data02/rere_zips"
     process_dir: "/data02/processing"
     # final_dir 可选值: /data02/dataset/scenesnew, /data02/dataset/lines
-    final_dir: "/data02/dataset/scenesnew"
+    final_dir: "/data02/dataset/lines"
     priority: 1
     enabled: true
 
@@ -49,7 +49,7 @@ dataweave:
 # 本地目录配置
 # =============================================================================
 local:
-  temp_dir: "/media/viper/T7/pipeline_downzips/"  # ZIP临时存储
+  temp_dir: "/media/zgw/T7/pipeline_downzips/"  # ZIP临时存储
   check_dir: null  # 检查报告目录，null则使用temp_dir/check_data
 
 # =============================================================================
@@ -60,7 +60,7 @@ processing:
   zip_after_process: "rename"
   
   # 是否重命名JSON文件为annotations.json
-  rename_json: true
+  rename_json: false
   
   # 检查规则配置文件路径
   check_config_path: "configs/check_rules.yaml"

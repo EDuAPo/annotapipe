@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--zip", required=True, help="ZIP 文件路径")
     parser.add_argument("--json", required=True, help="JSON 标注文件路径")
     parser.add_argument("--out", required=True, help="输出目录")
+    parser.add_argument("--output_name", default=None, help="输出目录名（可选，默认使用 ZIP 文件名）")
     parser.add_argument("--rename_json", default="False", help="是否重命名 JSON 为 annotations.json")
     args = parser.parse_args()
     
@@ -37,9 +38,10 @@ def main():
     output_root = Path(args.out)
     rename = args.rename_json.lower() == "true"
     
-    # 目标目录
-    final_dir = output_root / zip_path.stem
-    temp_dir = output_root / f"temp_{zip_path.stem}"
+    # 目标目录：优先使用指定的输出名称，否则使用 ZIP 文件名
+    output_name = args.output_name if args.output_name else zip_path.stem
+    final_dir = output_root / output_name
+    temp_dir = output_root / f"temp_{output_name}"
     
     # 清理临时目录
     if temp_dir.exists():
