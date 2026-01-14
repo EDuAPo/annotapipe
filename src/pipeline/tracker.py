@@ -171,12 +171,14 @@ class FeishuTracker(BaseTracker):
     def is_available(self) -> bool:
         return self._available and self.config.get('enabled', True)
     
-    def _get_token(self) -> str:
+    def _get_token(self, force_refresh: bool = False) -> str:
         """获取 tenant_access_token"""
-        if self._token and self._token_time:
-            if time.time() - self._token_time < 7000:
+        # 如果有缓存的token且未过期，直接返回
+        if not force_refresh and self._token and self._token_time:
+            if time.time() - self._token_time < 6900:  # 提前100秒刷新，避免边界情况
                 return self._token
         
+        # 获取新token
         url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
         payload = {
             "app_id": self.config.get('app_id', ''),
@@ -189,14 +191,27 @@ class FeishuTracker(BaseTracker):
             if data.get('code') == 0:
                 self._token = data.get('tenant_access_token')
                 self._token_time = time.time()
+                logger.debug(f"✓ 飞书token获取成功")
                 return self._token
+            else:
+                logger.error(f"获取飞书token失败: code={data.get('code')}, msg={data.get('msg')}")
+                # 清除缓存的token
+                self._token = None
+                self._token_time = None
         except Exception as e:
-            logger.error(f"获取飞书 Token 失败: {e}")
+            logger.error(f"获取飞书token异常: {e}")
+            # 清除缓存的token
+            self._token = None
+            self._token_time = None
         return ""
     
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self, force_refresh: bool = False) -> Dict[str, str]:
+        """获取请求头，如果token无效会自动刷新"""
+        token = self._get_token(force_refresh=force_refresh)
+        if not token:
+            raise Exception("无法获取有效的飞书token")
         return {
-            "Authorization": f"Bearer {self._get_token()}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
     
@@ -222,12 +237,29 @@ class FeishuTracker(BaseTracker):
                 params["page_token"] = page_token
             
             try:
-                r = requests.get(url, params=params, headers=self._get_headers(), timeout=30)
-                data = r.json()
-                
-                if data.get('code') != 0:
-                    logger.error(f"加载记录失败: code={data.get('code')}, msg={data.get('msg')}")
-                    break
+                # 尝试获取数据，如果token失效则刷新后重试
+                for attempt in range(2):
+                    try:
+                        headers = self._get_headers(force_refresh=(attempt > 0))
+                        r = requests.get(url, params=params, headers=headers, timeout=30)
+                        data = r.json()
+                        
+                        # 检查是否是token失效错误
+                        if data.get('code') == 99991663 and attempt == 0:
+                            logger.warning("飞书token失效，刷新后重试...")
+                            continue
+                        
+                        if data.get('code') != 0:
+                            logger.error(f"加载记录失败: code={data.get('code')}, msg={data.get('msg')}")
+                            break
+                        
+                        # 成功，跳出重试循环
+                        break
+                    except Exception as e:
+                        if attempt == 0:
+                            logger.warning(f"请求失败，重试中: {e}")
+                            continue
+                        raise
                 
                 items = data.get('data', {}).get('items', [])
                 for item in items:
@@ -292,22 +324,38 @@ class FeishuTracker(BaseTracker):
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_create"
         
         payload = {"records": [{"fields": f} for f in records_fields]}
-        try:
-            r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
-            data = r.json()
-            if data.get('code') == 0:
-                created_records = data.get('data', {}).get('records', [])
-                created = len(created_records)
-                # 打印创建的记录详情
-                for rec in created_records:
-                    rec_id = rec.get('record_id', 'N/A')
-                    name = rec.get('fields', {}).get('数据包名称', 'N/A')
-                    logger.debug(f"  ✓ 已创建: {name} (record_id={rec_id})")
-                return created, created_records
-            else:
-                logger.error(f"批量创建失败: code={data.get('code')}, msg={data.get('msg')}")
-        except Exception as e:
-            logger.error(f"批量创建异常: {e}")
+        
+        # 尝试创建，如果token失效则刷新后重试
+        for attempt in range(2):
+            try:
+                headers = self._get_headers(force_refresh=(attempt > 0))
+                r = requests.post(url, json=payload, headers=headers, timeout=30)
+                data = r.json()
+                
+                # 检查是否是token失效错误
+                if data.get('code') == 99991663 and attempt == 0:
+                    logger.warning("飞书token失效，刷新后重试...")
+                    continue
+                
+                if data.get('code') == 0:
+                    created_records = data.get('data', {}).get('records', [])
+                    created = len(created_records)
+                    # 打印创建的记录详情
+                    for rec in created_records:
+                        rec_id = rec.get('record_id', 'N/A')
+                        name = rec.get('fields', {}).get('数据包名称', 'N/A')
+                        logger.debug(f"  ✓ 已创建: {name} (record_id={rec_id})")
+                    return created, created_records
+                else:
+                    logger.error(f"批量创建失败: code={data.get('code')}, msg={data.get('msg')}")
+                    return 0, []
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"创建请求失败，重试中: {e}")
+                    continue
+                logger.error(f"批量创建异常: {e}")
+                return 0, []
+        
         return 0, []
     
     def _batch_update_records(self, records: List[Dict]) -> int:
@@ -322,23 +370,39 @@ class FeishuTracker(BaseTracker):
         # 直接使用字段名称
         payload = {"records": records}
         logger.debug(f"📝 更新请求: record_id={records[0]['record_id'] if records else 'N/A'}, fields={records[0]['fields'] if records else {}}")
-        try:
-            r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
-            data = r.json()
-            logger.debug(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}")
-            if data.get('code') == 0:
-                updated_records = data.get('data', {}).get('records', [])
-                for rec in updated_records:
-                    rec_id = rec.get('record_id', 'N/A')
-                    name = rec.get('fields', {}).get('数据包名称', 'N/A')
-                    logger.debug(f"  ✓ 已更新: {name} (record_id={rec_id})")
-                return len(updated_records)
-            else:
-                logger.error(f"批量更新失败: code={data.get('code')}, msg={data.get('msg')}")
-                if records:
-                    logger.error(f"更新记录示例: {records[0]}")
-        except Exception as e:
-            logger.error(f"批量更新异常: {e}")
+        
+        # 尝试更新，如果token失效则刷新后重试
+        for attempt in range(2):
+            try:
+                headers = self._get_headers(force_refresh=(attempt > 0))
+                r = requests.post(url, json=payload, headers=headers, timeout=30)
+                data = r.json()
+                logger.debug(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}")
+                
+                # 检查是否是token失效错误
+                if data.get('code') == 99991663 and attempt == 0:
+                    logger.warning("飞书token失效，刷新后重试...")
+                    continue
+                
+                if data.get('code') == 0:
+                    updated_records = data.get('data', {}).get('records', [])
+                    for rec in updated_records:
+                        rec_id = rec.get('record_id', 'N/A')
+                        name = rec.get('fields', {}).get('数据包名称', 'N/A')
+                        logger.debug(f"  ✓ 已更新: {name} (record_id={rec_id})")
+                    return len(updated_records)
+                else:
+                    logger.error(f"批量更新失败: code={data.get('code')}, msg={data.get('msg')}")
+                    if records:
+                        logger.error(f"更新记录示例: {records[0]}")
+                    return 0
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning(f"更新请求失败，重试中: {e}")
+                    continue
+                logger.error(f"批量更新异常: {e}")
+                return 0
+        
         return 0
     
     def _get_path_field_from_pipeline(self, pipeline_config_path: str) -> str:
