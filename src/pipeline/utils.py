@@ -53,8 +53,9 @@ def get_zip_name_candidates(stem: str) -> List[str]:
         candidates.append(f"{candidate1}.zip")
         seen.add(candidate1)
     
-    # 策略2: 移除 _数字_rere_数字 后缀（更激进）
-    candidate2 = re.sub(r'_\d+_rere_\d+$', '', stem)
+    # 策略2: 移除 _单/双位数字_rere_数字 后缀（如 _1_rere_1）
+    # 限制为1-2位数字，避免匹配时间戳部分
+    candidate2 = re.sub(r'_\d{1,2}_rere_\d+$', '', stem)
     if candidate2 not in seen and candidate2 != stem:
         candidates.append(f"{candidate2}.zip")
         seen.add(candidate2)
