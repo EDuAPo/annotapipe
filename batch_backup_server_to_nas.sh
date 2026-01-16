@@ -31,8 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${1:-$SCRIPT_DIR/configs/pipeline.yaml}"
 SERVER="user@222.223.112.212"
 LOG_FILE="backup_$(date +%Y%m%d_%H%M%S).log"
-RETRY_COUNT=2
-RETRY_DELAY=5
+RETRY_COUNT=3  # 增加重试次数到3次
+RETRY_DELAY=10  # 增加重试间隔到10秒
 
 # 从配置文件读取路径
 if [ -f "$CONFIG_FILE" ]; then
@@ -327,7 +327,9 @@ for DIR in $DIRS; do
         echo "  执行rsync..."
         
         rsync -avz --progress --partial --partial-dir=.rsync-partial \
-            --timeout=300 \
+            --timeout=1800 \  # 增加超时时间到30分钟，适合大文件传输
+            --bwlimit=0 \     # 不限制带宽
+            --no-compress \   # 对于大文件，禁用压缩以提高速度
             "$SERVER:$SERVER_DIR/$DIR/" \
             "$NAS_MOUNT/$DIR/" 2>&1 | tee -a "$LOG_FILE" || RSYNC_EXIT=$?
         
