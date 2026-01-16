@@ -58,15 +58,11 @@ def main():
     # 目标目录：优先使用指定的输出名称，否则使用 ZIP 文件名
     output_name = args.output_name if args.output_name else zip_path.stem
     final_dir = output_root / output_name
-    temp_dir = output_root / f"temp_{output_name}"
-    
-    # 清理临时目录
-    if temp_dir.exists():
-        shutil.rmtree(temp_dir)
-    temp_dir.mkdir(parents=True, exist_ok=True)
     
     try:
-        # 创建最终目录
+        # 创建最终目录（如果已存在则清理）
+        if final_dir.exists():
+            shutil.rmtree(final_dir)
         final_dir.mkdir(parents=True, exist_ok=True)
         
         # 复制 JSON 文件
@@ -143,10 +139,11 @@ def main():
         print(f"提取完成: 共 {extracted_count} 个文件")
         print("OK")
         
-    finally:
-        # 清理临时目录
-        if temp_dir.exists():
-            shutil.rmtree(temp_dir)
+    except Exception as e:
+        # 如果出错，清理不完整的目标目录
+        if final_dir.exists():
+            shutil.rmtree(final_dir)
+        raise
 
 
 if __name__ == "__main__":
