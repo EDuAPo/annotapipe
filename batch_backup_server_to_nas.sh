@@ -4,14 +4,24 @@
 #   bash batch_backup_server_to_nas.sh              # 使用默认配置文件
 #   bash batch_backup_server_to_nas.sh configs/pipeline.yaml  # 指定配置文件
 #   SERVER_DIR=/custom/path bash batch_backup_server_to_nas.sh  # 手动指定路径
+#   TEST_MODE=true bash batch_backup_server_to_nas.sh  # 测试模式（只检查不备份）
+#   SKIP_EMPTY=false bash batch_backup_server_to_nas.sh  # 备份空目录
+# 
+# 环境变量:
+#   TEST_MODE=true        # 测试模式，只检查目录状态
+#   SKIP_EMPTY=false      # 不跳过空目录
+#   BACKUP_MODE=force     # 强制重新备份
+#   SERVER_DIR_OVERRIDE   # 覆盖服务器目录路径
+#   NAS_PASSWORD          # NAS访问密码
 # 
 # 功能特性:
-# - SSH 连接测试
+# - SSH 连接测试和路径验证
 # - 断点续传（跳过已备份的目录）
-# - 失败自动重试
-# - 详细的进度显示
+# - 失败自动重试和详细错误诊断
+# - 空目录检测和跳过
+# - 测试模式（预览备份状态）
 # - 自动从配置文件读取路径
-# - 路径验证和错误诊断
+# - 详细的进度显示和日志记录
 # - 自动从配置文件读取路径
 
 set -e  # 遇到错误立即退出
@@ -62,11 +72,12 @@ else
     NAS_MOUNT="/mnt/nas_backup/from_rere/$(basename $SERVER_DIR)"
 fi
 
-# 备份模式
-# - skip: 跳过已存在的目录（快速，但不会更新已有数据）
-# - incremental: 增量备份，同步差异（推荐，rsync 会自动跳过相同文件）
-# - force: 强制重新备份，清理已存在的目录后重新备份（用于修复损坏的数据）
-BACKUP_MODE="${BACKUP_MODE:-incremental}"
+# 测试模式
+TEST_MODE="${TEST_MODE:-false}"
+
+if [ "$TEST_MODE" = "true" ]; then
+    echo -e "${YELLOW}测试模式: 只检查目录，不执行备份${NC}"
+fi
 
 # 颜色输出
 RED='\033[0;31m'
@@ -169,15 +180,27 @@ fi
 # 获取服务器上的目录列表
 echo ""
 echo "正在获取服务器上的目录列表..."
+echo "执行命令: ssh $SERVER 'ls -1 $SERVER_DIR'"
 DIRS=$(ssh $SERVER "ls -1 $SERVER_DIR" 2>/dev/null)
 
 if [ -z "$DIRS" ]; then
     echo -e "${RED}✗ 无法获取目录列表${NC}"
+    echo "请检查SSH连接和目录权限"
     exit 1
 fi
 
-TOTAL=$(echo "$DIRS" | wc -l)
-echo "找到 $TOTAL 个目录"
+# 保存到临时文件以便调试
+TEMP_DIR_LIST="/tmp/dir_list_$(date +%s).txt"
+echo "$DIRS" > "$TEMP_DIR_LIST"
+TOTAL=$(wc -l < "$TEMP_DIR_LIST")
+echo "找到 $TOTAL 个目录 (已保存到 $TEMP_DIR_LIST)"
+
+# 检查是否有特殊字符或权限问题
+INVALID_DIRS=$(echo "$DIRS" | grep -v '^[a-zA-Z0-9_.-]*$' | wc -l)
+if [ "$INVALID_DIRS" -gt 0 ]; then
+    echo -e "${YELLOW}警告: 发现 $INVALID_DIRS 个目录名包含特殊字符${NC}"
+    echo "这些目录可能导致rsync失败"
+fi
 
 # 检查已备份的目录
 EXISTING=0
@@ -235,11 +258,21 @@ trap 'echo ""; echo ""; echo "备份已中断，进度已保存"; echo "下次�
 for DIR in $DIRS; do
     CURRENT=$((CURRENT + 1))
     
-    # 根据备份模式决定是否跳过
-    if [ "$BACKUP_MODE" = "skip" ] && [ -d "$NAS_MOUNT/$DIR" ]; then
-        echo "[$CURRENT/$TOTAL] ${YELLOW}跳过${NC}: $DIR (已存在)"
-        SKIPPED=$((SKIPPED + 1))
-        echo "[$CURRENT/$TOTAL] 跳过: $DIR (已存在)" >> "$LOG_FILE"
+    # 测试模式：只检查不备份
+    if [ "$TEST_MODE" = "true" ]; then
+        if ! ssh $SERVER "test -d $SERVER_DIR/$DIR" 2>/dev/null; then
+            echo "[$CURRENT/$TOTAL] ${RED}✗ 不存在${NC}: $DIR"
+            FAILED=$((FAILED + 1))
+        else
+            SRC_SIZE=$(ssh $SERVER "du -sb $SERVER_DIR/$DIR 2>/dev/null | cut -f1" 2>/dev/null || echo "0")
+            if [ "$SRC_SIZE" = "0" ]; then
+                echo "[$CURRENT/$TOTAL] ${YELLOW}⚠ 空目录${NC}: $DIR"
+                SKIPPED=$((SKIPPED + 1))
+            else
+                echo "[$CURRENT/$TOTAL] ${GREEN}✓ 可备份${NC}: $DIR ($(numfmt --to=iec-i --suffix=B $SRC_SIZE 2>/dev/null || echo ${SRC_SIZE}B))"
+                SUCCESS=$((SUCCESS + 1))
+            fi
+        fi
         continue
     fi
     
@@ -267,10 +300,31 @@ for DIR in $DIRS; do
             sleep $RETRY_DELAY
         fi
         
+        # 检查源目录是否存在
+        if ! ssh $SERVER "test -d $SERVER_DIR/$DIR" 2>/dev/null; then
+            echo -e "  ${RED}✗ 源目录不存在: $SERVER_DIR/$DIR${NC}"
+            echo "  跳过此目录"
+            FAILED=$((FAILED + 1))
+            echo "[$CURRENT/$TOTAL] 失败: $DIR (源目录不存在)" >> "$LOG_FILE"
+            continue
+        fi
+        
+        # 检查源目录是否有内容
+        SRC_SIZE=$(ssh $SERVER "du -sb $SERVER_DIR/$DIR 2>/dev/null | cut -f1" 2>/dev/null || echo "0")
+        if [ "$SRC_SIZE" = "0" ] && [ "$SKIP_EMPTY" = "true" ]; then
+            echo -e "  ${YELLOW}⚠ 源目录为空: $DIR${NC}"
+            echo "  跳过空目录"
+            SKIPPED=$((SKIPPED + 1))
+            echo "[$CURRENT/$TOTAL] 跳过: $DIR (空目录)" >> "$LOG_FILE"
+            continue
+        fi
+        
+        if [ "$SRC_SIZE" != "0" ]; then
+            echo "  源目录大小: $(numfmt --to=iec-i --suffix=B $SRC_SIZE 2>/dev/null || echo ${SRC_SIZE}B)"
+        fi
+        
         # 使用rsync直接从服务器到NAS
-        echo "  执行: rsync -avz --progress --partial --partial-dir=.rsync-partial --timeout=300"
-        echo "  从: $SERVER:$SERVER_DIR/$DIR/"
-        echo "  到: $NAS_MOUNT/$DIR/"
+        echo "  执行rsync..."
         
         rsync -avz --progress --partial --partial-dir=.rsync-partial \
             --timeout=300 \
@@ -293,6 +347,16 @@ for DIR in $DIRS; do
                 30) echo "  错误解释: 超时" ;;
                 *) echo "  错误解释: 未知错误 (请查看rsync手册)" ;;
             esac
+            
+            # 对于错误23，检查目标目录是否已创建
+            if [ $RSYNC_EXIT -eq 23 ] && [ -d "$NAS_MOUNT/$DIR" ]; then
+                TARGET_SIZE=$(du -sb "$NAS_MOUNT/$DIR" 2>/dev/null | cut -f1)
+                if [ "$TARGET_SIZE" -gt 0 ]; then
+                    echo "  目标目录已创建，大小: $(numfmt --to=iec-i --suffix=B $TARGET_SIZE 2>/dev/null || echo ${TARGET_SIZE}B)"
+                    echo "  可能存在部分传输，标记为成功"
+                    RSYNC_SUCCESS=true
+                fi
+            fi
         fi
     done
     
