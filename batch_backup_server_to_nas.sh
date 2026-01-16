@@ -1,22 +1,66 @@
 #!/bin/bash
 # 直接从服务器备份到NAS（不经过本地）
-# 使用方法: bash batch_backup_server_to_nas.sh
+# 使用方法: 
+#   bash batch_backup_server_to_nas.sh              # 使用默认配置文件
+#   bash batch_backup_server_to_nas.sh configs/pipeline.yaml  # 指定配置文件
+#   SERVER_DIR=/custom/path bash batch_backup_server_to_nas.sh  # 手动指定路径
 # 
 # 功能特性:
 # - SSH 连接测试
 # - 断点续传（跳过已备份的目录）
 # - 失败自动重试
 # - 详细的进度显示
+# - 自动从配置文件读取路径
+# - 路径验证和错误诊断
+# - 自动从配置文件读取路径
 
 set -e  # 遇到错误立即退出
 
-# 配置
+# 默认配置
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${1:-$SCRIPT_DIR/configs/pipeline.yaml}"
 SERVER="user@222.223.112.212"
-SERVER_DIR="/data02/dataset/scenesnew"
-NAS_MOUNT="/mnt/nas_backup/from_rere/boxes"
 LOG_FILE="backup_$(date +%Y%m%d_%H%M%S).log"
 RETRY_COUNT=2
 RETRY_DELAY=5
+
+# 从配置文件读取路径
+if [ -f "$CONFIG_FILE" ]; then
+    echo "正在从配置文件读取路径: $CONFIG_FILE"
+    SERVER_DIR=$(python3 -c "
+import yaml
+with open('$CONFIG_FILE', 'r') as f:
+    config = yaml.safe_load(f)
+    servers = config.get('servers', [])
+    for server in servers:
+        if server.get('enabled', False):
+            print(server.get('final_dir', '/data02/dataset/scenesnew'))
+            break
+    " 2>/dev/null)
+    
+    if [ -z "$SERVER_DIR" ]; then
+        echo -e "${YELLOW}警告: 无法从配置文件读取路径，使用默认路径${NC}"
+        SERVER_DIR="/data02/dataset/scenesnew"
+    fi
+else
+    echo -e "${YELLOW}警告: 配置文件不存在，使用默认路径${NC}"
+    SERVER_DIR="/data02/dataset/scenesnew"
+fi
+
+# 允许环境变量覆盖
+if [ -n "$SERVER_DIR_OVERRIDE" ]; then
+    echo "使用环境变量覆盖路径: $SERVER_DIR_OVERRIDE"
+    SERVER_DIR="$SERVER_DIR_OVERRIDE"
+fi
+
+# 根据服务器路径确定NAS目标路径
+if [[ "$SERVER_DIR" == *"/data02/dataset/lines" ]]; then
+    NAS_MOUNT="/mnt/nas_backup/from_rere/lines"
+elif [[ "$SERVER_DIR" == *"/data02/dataset/scenesnew" ]]; then
+    NAS_MOUNT="/mnt/nas_backup/from_rere/boxes"
+else
+    NAS_MOUNT="/mnt/nas_backup/from_rere/$(basename $SERVER_DIR)"
+fi
 
 # 备份模式
 # - skip: 跳过已存在的目录（快速，但不会更新已有数据）
@@ -73,6 +117,31 @@ if ! ssh -o ConnectTimeout=10 -o BatchMode=yes $SERVER "echo 'SSH连接成功'" 
     exit 1
 fi
 echo -e "${GREEN}✓ SSH连接正常${NC}"
+echo ""
+
+# 验证源目录存在
+echo "正在验证源目录..."
+if ! ssh $SERVER "test -d $SERVER_DIR" 2>/dev/null; then
+    echo -e "${RED}✗ 源目录不存在: $SERVER_DIR${NC}"
+    echo ""
+    echo "请检查服务器上的目录结构:"
+    echo "  ssh $SERVER 'ls -la /data02/dataset/'"
+    echo ""
+    echo "可能的解决方案:"
+    echo "1. 检查配置文件中的 final_dir 设置"
+    echo "2. 手动指定正确的路径: SERVER_DIR=/path/to/data $0"
+    exit 1
+fi
+
+# 检查源目录是否有内容
+DIR_COUNT=$(ssh $SERVER "ls -1 $SERVER_DIR 2>/dev/null | wc -l")
+if [ "$DIR_COUNT" -eq 0 ]; then
+    echo -e "${YELLOW}⚠ 源目录为空: $SERVER_DIR${NC}"
+    echo "目录存在但没有子目录，可能是配置错误"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ 源目录验证通过: $SERVER_DIR ($DIR_COUNT 个项目)${NC}"
 echo ""
 
 # 检查NAS是否已挂载
@@ -199,15 +268,31 @@ for DIR in $DIRS; do
         fi
         
         # 使用rsync直接从服务器到NAS
+        echo "  执行: rsync -avz --progress --partial --partial-dir=.rsync-partial --timeout=300"
+        echo "  从: $SERVER:$SERVER_DIR/$DIR/"
+        echo "  到: $NAS_MOUNT/$DIR/"
+        
         rsync -avz --progress --partial --partial-dir=.rsync-partial \
             --timeout=300 \
             "$SERVER:$SERVER_DIR/$DIR/" \
-            "$NAS_MOUNT/$DIR/" 2>&1 | tee -a "$LOG_FILE" | grep -E "(sent|received|total size|speedup)" || true
+            "$NAS_MOUNT/$DIR/" 2>&1 | tee -a "$LOG_FILE" || RSYNC_EXIT=$?
         
-        RSYNC_EXIT=${PIPESTATUS[0]}
-        if [ $RSYNC_EXIT -eq 0 ]; then
+        # 检查rsync结果
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
             RSYNC_SUCCESS=true
-            break
+            echo "  rsync 退出码: 0 (成功)"
+        else
+            RSYNC_EXIT=${PIPESTATUS[0]}
+            echo "  rsync 退出码: $RSYNC_EXIT"
+            
+            # 解释常见错误码
+            case $RSYNC_EXIT in
+                23) echo "  错误解释: 部分传输错误 (可能源目录不存在或权限问题)" ;;
+                10) echo "  错误解释: 源目录不存在" ;;
+                12) echo "  错误解释: 权限被拒绝" ;;
+                30) echo "  错误解释: 超时" ;;
+                *) echo "  错误解释: 未知错误 (请查看rsync手册)" ;;
+            esac
         fi
     done
     
