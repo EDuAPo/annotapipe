@@ -163,13 +163,59 @@ class Downloader:
     def download_file(self, filename: str, target_path: Path, 
                       progress_callback=None, resume: bool = True) -> bool:
         """
-        下载单个文件（支持断点续传）
+        下载单个文件（支持断点续传和自适应文件名匹配）
+        
+        自动尝试多个候选文件名，直到找到匹配的文件：
+        - 例如：1202_111045_111345_1_rere_1.json
+          → 尝试 1202_111045_111345_1.zip
+          → 尝试 1202_111045_111345.zip
+          → 尝试 1202_111045_111345_1_rere_1.zip
         
         Args:
             filename: 文件名
             target_path: 目标路径
             progress_callback: 进度回调 (downloaded, total)
             resume: 是否启用断点续传
+        """
+        from .utils import get_zip_name_candidates
+        
+        # 生成候选文件名列表
+        stem = filename.replace('.zip', '')
+        candidates = get_zip_name_candidates(stem)
+        
+        logger.debug(f"生成候选文件名: {candidates}")
+        
+        # 尝试每个候选文件名
+        for idx, candidate_filename in enumerate(candidates, 1):
+            logger.info(f"尝试候选 {idx}/{len(candidates)}: {candidate_filename}")
+            
+            success = self._try_download_single(
+                candidate_filename, target_path, 
+                progress_callback, resume
+            )
+            
+            if success:
+                logger.info(f"✓ 成功匹配文件名: {candidate_filename}")
+                return True
+            else:
+                logger.debug(f"✗ 候选失败: {candidate_filename}")
+        
+        logger.warning(f"✗ 所有候选文件名都失败: {candidates}")
+        return False
+    
+    def _try_download_single(self, filename: str, target_path: Path,
+                             progress_callback=None, resume: bool = True) -> bool:
+        """
+        尝试下载单个文件名（内部方法）
+        
+        Args:
+            filename: 文件名
+            target_path: 目标路径
+            progress_callback: 进度回调
+            resume: 是否启用断点续传
+        
+        Returns:
+            是否下载成功
         """
         temp_file = target_path.with_suffix('.zip.tmp')
         
