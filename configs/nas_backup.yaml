@@ -18,8 +18,8 @@ nas:
 # 路径映射配置
 # 格式: final_dir路径 -> NAS目标路径（相对于共享根目录）
 path_mappings:
-  "/data02/dataset/scenesnew": "from_rere/boxes"
-  "/data02/dataset/lines": "from_rere/lines"
+  "/data02/dataset/od_annotations/scenes": "from_rere/boxes"
+  # "/data02/dataset/lines": "from_rere/lines"
   
 
 # 备份策略

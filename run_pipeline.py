@@ -81,6 +81,29 @@ def main():
         help='配置文件路径 (可选)'
     )
     
+    parser.add_argument(
+        '--preset', '-p',
+        type=str,
+        default=None,
+        help='预设模式 (full/download_only/check_only/reprocess/sync_only)'
+    )
+    
+    parser.add_argument(
+        '--enable-steps',
+        type=str,
+        nargs='+',
+        default=None,
+        help='启用的步骤列表'
+    )
+    
+    parser.add_argument(
+        '--disable-steps',
+        type=str,
+        nargs='+',
+        default=None,
+        help='禁用的步骤列表'
+    )
+    
     args = parser.parse_args()
     
     # 验证路径
@@ -96,7 +119,10 @@ def main():
     runner = PipelineRunner(
         json_dir=str(json_dir),
         local_zip_dir=args.zip_dir,
-        config=config
+        config=config,
+        preset=args.preset,
+        enabled_steps=args.enable_steps,
+        disabled_steps=args.disable_steps
     )
     
     result = runner.run(mode=args.mode, workers=args.workers)

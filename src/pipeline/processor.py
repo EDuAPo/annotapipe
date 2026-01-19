@@ -116,6 +116,14 @@ class RemoteProcessor:
         has_zip = self.ssh.file_exists(zip_path)
         
         if has_zip:
+            # 验证 ZIP 文件完整性
+            logger.info(f"[{stem}] 🔍 验证ZIP完整性...")
+            verify_cmd = f"python3 -c \"import zipfile; z=zipfile.ZipFile('{zip_path}'); exit(0 if z.testzip() is None else 1)\""
+            status, _, err = self.ssh.exec_command(verify_cmd, timeout=30)
+            if status != 0:
+                logger.error(f"[{stem}] ZIP文件损坏")
+                return False, f"ZIP文件损坏，请重新上传: {err[:100]}"
+            
             # 有 ZIP 文件：解压并处理
             logger.info(f"[{stem}] 📦 解压ZIP...")
             

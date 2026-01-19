@@ -86,6 +86,8 @@ def main():
             "iv_points_front_right",
             "iv_points_rear_left",
             "iv_points_rear_right",
+            "iv_points_left_mid",
+            "iv_points_right_mid"
         ]
         
         # 选择性解压：只提取需要的文件

@@ -12,8 +12,8 @@ servers:
     # password 通过环境变量 SERVER_PRIMARY_PASSWORD 设置
     zip_dir: "/data02/rere_zips"
     process_dir: "/data02/processing"
-    # final_dir 可选值: /data02/dataset/scenesnew, /data02/dataset/lines
-    final_dir: "/data02/dataset/lines"
+    # final_dir 可选值: /data02/dataset/scenesnew, /data02/dataset/lines, /data02/dataset/od_annotations/scenes
+    final_dir: "/data02/dataset/od_annotations/scenes"
     priority: 1
     enabled: true
 
@@ -60,7 +60,7 @@ processing:
   zip_after_process: "rename"
   
   # 是否重命名JSON文件为annotations.json
-  rename_json: false
+  rename_json: true
   
   # 检查规则配置文件路径
   check_config_path: "configs/check_rules.yaml"
@@ -77,6 +77,48 @@ concurrency:
   
   # 批处理大小
   batch_size: 20
+
+# =============================================================================
+# 步骤调度配置
+# =============================================================================
+# 控制流水线中哪些步骤需要执行
+# 所有步骤默认启用，可以根据需要禁用特定步骤
+steps:
+  download: true          # 下载 ZIP 文件
+  upload: true            # 上传到服务器
+  extract: true           # 解压处理
+  check: true             # 质量检查
+  move_to_final: true     # 移动到 final_dir
+  nas_backup: false        # NAS 备份
+  feishu_sync: true       # 飞书同步
+
+# 预设模式：常用场景的快捷配置
+# 使用方法: python run_pipeline.py --json_dir ./jsons --preset download_only
+step_presets:
+  full:
+    - download
+    - upload
+    - extract
+    - check
+    - move_to_final
+    - nas_backup
+    - feishu_sync
+  
+  download_only:
+    - download
+  
+  check_only:
+    - check
+    - feishu_sync
+  
+  reprocess:
+    - extract
+    - check
+    - move_to_final
+    - feishu_sync
+  
+  sync_only:
+    - feishu_sync
 
 # =============================================================================
 # 日志配置

@@ -38,16 +38,21 @@ class TokenManager:
         self._token: Optional[str] = None
         self._token_time: Optional[float] = None
         self._max_age = 50 * 60  # 50分钟
+        self._refresh_buffer = 5 * 60  # 提前5分钟刷新，避免长时间操作中过期
         self._token_lock = threading.Lock()
         self._initialized = True
     
     def get_token(self, force_refresh: bool = False) -> str:
         """获取有效的 Token（线程安全）"""
         with self._token_lock:
-            # 检查是否有有效 token
+            # 检查是否有有效 token（提前刷新避免长时间操作中过期）
             if not force_refresh and self._token and self._token_time:
-                if time.time() - self._token_time < self._max_age:
+                age = time.time() - self._token_time
+                if age < (self._max_age - self._refresh_buffer):
                     return self._token
+                # Token即将过期但还有效，记录日志后刷新
+                if age < self._max_age:
+                    logger.info("🔄 Token即将过期，提前刷新")
             
             if not self.config.username or not self.config.password:
                 return f"Bearer {self.config.token}" if self.config.token else ""
@@ -251,7 +256,20 @@ class Downloader:
                 
                 with requests.get(url, headers=download_headers, stream=True, timeout=(15, 60)) as r:
                     # 检查服务器是否支持断点续传
-                    if r.status_code == 206:  # Partial Content
+                    if r.status_code == 416:  # Range Not Satisfiable
+                        # 本地临时文件异常（可能大于服务器文件），删除重新下载
+                        logger.warning(f"本地临时文件异常，重新下载: {filename}")
+                        if temp_file.exists():
+                            temp_file.unlink()
+                        downloaded = 0
+                        download_headers.pop("Range", None)
+                        # 重新发起请求
+                        r.close()
+                        r = requests.get(url, headers=download_headers, stream=True, timeout=(15, 60))
+                        r.raise_for_status()
+                        total_size = int(r.headers.get('content-length', 0))
+                        mode = 'wb'
+                    elif r.status_code == 206:  # Partial Content
                         # 服务器支持断点续传
                         content_range = r.headers.get('content-range', '')
                         if content_range:

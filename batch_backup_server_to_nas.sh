@@ -26,6 +26,14 @@
 
 set -e  # 遇到错误立即退出
 
+# 颜色输出 (提前定义，以便在脚本早期使用)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
 # 默认配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${1:-$SCRIPT_DIR/configs/pipeline.yaml}"
@@ -64,12 +72,48 @@ if [ -n "$SERVER_DIR_OVERRIDE" ]; then
 fi
 
 # 根据服务器路径确定NAS目标路径
-if [[ "$SERVER_DIR" == *"/data02/dataset/lines" ]]; then
-    NAS_MOUNT="/mnt/nas_backup/from_rere/lines"
-elif [[ "$SERVER_DIR" == *"/data02/dataset/scenesnew" ]]; then
-    NAS_MOUNT="/mnt/nas_backup/from_rere/boxes"
+# 首先尝试从 nas_backup.yaml 读取路径映射
+NAS_BACKUP_CONFIG="${SCRIPT_DIR}/configs/nas_backup.yaml"
+if [ -f "$NAS_BACKUP_CONFIG" ]; then
+    echo "正在从NAS备份配置文件读取路径映射: $NAS_BACKUP_CONFIG"
+    NAS_TARGET=$(python3 -c "
+import yaml
+with open('$NAS_BACKUP_CONFIG', 'r') as f:
+    config = yaml.safe_load(f)
+    path_mappings = config.get('path_mappings', {})
+    server_dir = '$SERVER_DIR'
+    for source, target in path_mappings.items():
+        if source in server_dir:
+            print(target)
+            break
+    else:
+        print('')
+    " 2>/dev/null)
+    
+    if [ -n "$NAS_TARGET" ]; then
+        NAS_MOUNT="/mnt/nas_backup/$NAS_TARGET"
+        echo "使用配置文件中的路径映射: $SERVER_DIR -> $NAS_MOUNT"
+    else
+        echo -e "${YELLOW}警告: 配置文件中未找到匹配的路径映射，使用默认逻辑${NC}"
+        # 默认逻辑
+        if [[ "$SERVER_DIR" == *"/data02/dataset/lines" ]]; then
+            NAS_MOUNT="/mnt/nas_backup/from_rere/lines"
+        elif [[ "$SERVER_DIR" == *"/data02/dataset/scenesnew" ]]; then
+            NAS_MOUNT="/mnt/nas_backup/from_rere/boxes"
+        else
+            NAS_MOUNT="/mnt/nas_backup/from_rere/$(basename $SERVER_DIR)"
+        fi
+    fi
 else
-    NAS_MOUNT="/mnt/nas_backup/from_rere/$(basename $SERVER_DIR)"
+    echo -e "${YELLOW}警告: NAS备份配置文件不存在，使用默认路径逻辑${NC}"
+    # 默认逻辑
+    if [[ "$SERVER_DIR" == *"/data02/dataset/lines" ]]; then
+        NAS_MOUNT="/mnt/nas_backup/from_rere/lines"
+    elif [[ "$SERVER_DIR" == *"/data02/dataset/scenesnew" ]]; then
+        NAS_MOUNT="/mnt/nas_backup/from_rere/boxes"
+    else
+        NAS_MOUNT="/mnt/nas_backup/from_rere/$(basename $SERVER_DIR)"
+    fi
 fi
 
 # 测试模式
@@ -79,11 +123,74 @@ if [ "$TEST_MODE" = "true" ]; then
     echo -e "${YELLOW}测试模式: 只检查目录，不执行备份${NC}"
 fi
 
-# 颜色输出
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# ============================================
+# 辅助函数
+# ============================================
+
+# 格式化时间显示 (秒 -> HH:MM:SS)
+format_time() {
+    local seconds=$1
+    if [ "$seconds" -lt 0 ]; then
+        seconds=0
+    fi
+    printf "%02d:%02d:%02d" $((seconds/3600)) $((seconds%3600/60)) $((seconds%60))
+}
+
+# 格式化大小显示 (字节 -> 人类可读)
+format_size() {
+    local bytes=$1
+    if command -v numfmt &> /dev/null; then
+        numfmt --to=iec-i --suffix=B "$bytes" 2>/dev/null || echo "${bytes}B"
+    else
+        # 备用方案
+        if [ "$bytes" -lt 1024 ]; then
+            echo "${bytes}B"
+        elif [ "$bytes" -lt 1048576 ]; then
+            echo "$(( bytes / 1024 ))KiB"
+        elif [ "$bytes" -lt 1073741824 ]; then
+            echo "$(( bytes / 1048576 ))MiB"
+        else
+            echo "$(( bytes / 1073741824 ))GiB"
+        fi
+    fi
+}
+
+# 计算百分比
+calc_percent() {
+    local current=$1
+    local total=$2
+    if [ "$total" -eq 0 ]; then
+        echo "0.0"
+    else
+        echo "scale=1; $current * 100 / $total" | bc 2>/dev/null || echo "0.0"
+    fi
+}
+
+# 格式化速度显示 (字节/秒 -> MB/s)
+format_speed() {
+    local bytes_per_sec=$1
+    if [ "$bytes_per_sec" -lt 1048576 ]; then
+        echo "$(( bytes_per_sec / 1024 ))KB/s"
+    else
+        local mb_per_sec=$(echo "scale=1; $bytes_per_sec / 1048576" | bc 2>/dev/null || echo "0")
+        echo "${mb_per_sec}MB/s"
+    fi
+}
+
+# 打印进度条
+print_progress_bar() {
+    local current=$1
+    local total=$2
+    local width=40
+    local percent=$(calc_percent $current $total)
+    local filled=$(echo "scale=0; $width * $current / $total" | bc 2>/dev/null || echo "0")
+    local empty=$((width - filled))
+    
+    printf "["
+    for ((i=0; i<filled; i++)); do printf "█"; done
+    for ((i=0; i<empty; i++)); do printf "░"; done
+    printf "] %.1f%%" "$percent"
+}
 
 echo "=========================================="
 echo "服务器到NAS直接备份工具"
@@ -245,11 +352,13 @@ echo "目标目录: $NAS_MOUNT" >> "$LOG_FILE"
 echo "========================================" >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
 
-# 计数器
+# 计数器和统计变量
 SUCCESS=0
 FAILED=0
 SKIPPED=0
 CURRENT=0
+TOTAL_TRANSFERRED=0
+START_TIME=$(date +%s)
 
 # 捕获 Ctrl+C
 trap 'echo ""; echo ""; echo "备份已中断，进度已保存"; echo "下次运行将自动续传"; exit 130' INT
@@ -276,21 +385,45 @@ for DIR in $DIRS; do
         continue
     fi
     
+    # 计算进度统计
+    PERCENT=$(calc_percent $CURRENT $TOTAL)
+    ELAPSED=$(($(date +%s) - START_TIME))
+    if [ $CURRENT -gt 0 ]; then
+        AVG_TIME_PER_DIR=$((ELAPSED / CURRENT))
+        REMAINING_DIRS=$((TOTAL - CURRENT))
+        ETA=$((AVG_TIME_PER_DIR * REMAINING_DIRS))
+    else
+        AVG_TIME_PER_DIR=0
+        ETA=0
+    fi
+    
+    # 显示增强的进度信息
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}进度:${NC} [$CURRENT/$TOTAL] $(print_progress_bar $CURRENT $TOTAL)"
+    echo -e "${BLUE}目录:${NC} $DIR"
+    echo -e "${BLUE}已用时:${NC} $(format_time $ELAPSED) | ${BLUE}预计剩余:${NC} $(format_time $ETA)"
+    if [ $CURRENT -gt 0 ]; then
+        echo -e "${BLUE}平均速度:${NC} $(format_time $AVG_TIME_PER_DIR)/目录"
+    fi
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
     # 强制模式：删除已存在的目录后重新备份
     if [ "$BACKUP_MODE" = "force" ] && [ -d "$NAS_MOUNT/$DIR" ]; then
-        echo "[$CURRENT/$TOTAL] ${RED}强制重新备份${NC}: $DIR (删除旧数据)"
+        echo -e "${RED}强制重新备份${NC} (删除旧数据)"
         rm -rf "$NAS_MOUNT/$DIR"
         echo "  已删除旧数据"
     elif [ -d "$NAS_MOUNT/$DIR" ]; then
         # 增量备份模式：即使目录存在也会同步差异
-        echo "[$CURRENT/$TOTAL] ${GREEN}增量备份${NC}: $DIR (同步差异)"
+        echo -e "${GREEN}增量备份${NC} (同步差异)"
     else
-        echo "[$CURRENT/$TOTAL] 备份: $DIR"
+        echo "开始备份"
     fi
     
     # 重试机制
     ATTEMPT=0
     RSYNC_SUCCESS=false
+    RSYNC_EXIT=0  # 初始化退出码
     
     while [ $ATTEMPT -lt $RETRY_COUNT ]; do
         ATTEMPT=$((ATTEMPT + 1))
@@ -306,7 +439,7 @@ for DIR in $DIRS; do
             echo "  跳过此目录"
             FAILED=$((FAILED + 1))
             echo "[$CURRENT/$TOTAL] 失败: $DIR (源目录不存在)" >> "$LOG_FILE"
-            continue
+            break  # 退出while循环，继续for循环
         fi
         
         # 检查源目录是否有内容
@@ -316,7 +449,7 @@ for DIR in $DIRS; do
             echo "  跳过空目录"
             SKIPPED=$((SKIPPED + 1))
             echo "[$CURRENT/$TOTAL] 跳过: $DIR (空目录)" >> "$LOG_FILE"
-            continue
+            break  # 退出while循环，继续for循环
         fi
         
         if [ "$SRC_SIZE" != "0" ]; then
@@ -326,10 +459,15 @@ for DIR in $DIRS; do
         # 使用rsync直接从服务器到NAS
         echo "  执行rsync..."
         
-        rsync -avz --progress --partial --partial-dir=.rsync-partial \
-            --timeout=1800 \  # 增加超时时间到30分钟，适合大文件传输
-            --bwlimit=0 \     # 不限制带宽
-            --no-compress \   # 对于大文件，禁用压缩以提高速度
+        # rsync 选项说明:
+        # --timeout=1800: 增加超时时间到30分钟，适合大文件传输
+        # --bwlimit=0: 不限制带宽
+        # --no-compress: 对于大文件，禁用压缩以提高速度
+        # --info=progress2: 显示简洁的总体进度，不列出每个文件
+        rsync -az --info=progress2 --partial --partial-dir=.rsync-partial \
+            --timeout=1800 \
+            --bwlimit=0 \
+            --no-compress \
             "$SERVER:$SERVER_DIR/$DIR/" \
             "$NAS_MOUNT/$DIR/" 2>&1 | tee -a "$LOG_FILE" || RSYNC_EXIT=$?
         
@@ -337,6 +475,7 @@ for DIR in $DIRS; do
         if [ ${PIPESTATUS[0]} -eq 0 ]; then
             RSYNC_SUCCESS=true
             echo "  rsync 退出码: 0 (成功)"
+            break  # 成功后立即退出重试循环
         else
             RSYNC_EXIT=${PIPESTATUS[0]}
             echo "  rsync 退出码: $RSYNC_EXIT"
@@ -357,6 +496,7 @@ for DIR in $DIRS; do
                     echo "  目标目录已创建，大小: $(numfmt --to=iec-i --suffix=B $TARGET_SIZE 2>/dev/null || echo ${TARGET_SIZE}B)"
                     echo "  可能存在部分传输，标记为成功"
                     RSYNC_SUCCESS=true
+                    break  # 标记为成功后立即退出重试循环
                 fi
             fi
         fi
@@ -364,6 +504,10 @@ for DIR in $DIRS; do
     
     if [ "$RSYNC_SUCCESS" = true ]; then
         SUCCESS=$((SUCCESS + 1))
+        # 累计传输数据量
+        if [ "$SRC_SIZE" != "0" ] && [ -n "$SRC_SIZE" ]; then
+            TOTAL_TRANSFERRED=$((TOTAL_TRANSFERRED + SRC_SIZE))
+        fi
         echo -e "  ${GREEN}✓ 成功${NC}"
         echo "[$CURRENT/$TOTAL] 成功: $DIR" >> "$LOG_FILE"
     else
@@ -371,28 +515,94 @@ for DIR in $DIRS; do
         echo -e "  ${RED}✗ 失败${NC} (退出码: $RSYNC_EXIT, 已重试 $RETRY_COUNT 次)"
         echo "[$CURRENT/$TOTAL] 失败: $DIR (退出码: $RSYNC_EXIT)" >> "$LOG_FILE"
     fi
-    echo ""
+    
+    # 每10个目录显示一次阶段性摘要
+    if [ $((CURRENT % 10)) -eq 0 ] && [ "$TEST_MODE" != "true" ]; then
+        ELAPSED=$(($(date +%s) - START_TIME))
+        AVG_TIME=$((ELAPSED / CURRENT))
+        if [ $ELAPSED -gt 0 ]; then
+            TRANSFER_SPEED=$((TOTAL_TRANSFERRED / ELAPSED))
+        else
+            TRANSFER_SPEED=0
+        fi
+        
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}📊 阶段摘要 [$CURRENT/$TOTAL 完成]${NC}"
+        echo -e "${GREEN}✓ 成功: $SUCCESS${NC} | ${RED}✗ 失败: $FAILED${NC} | ${YELLOW}⊘ 跳过: $SKIPPED${NC}"
+        echo -e "已传输: $(format_size $TOTAL_TRANSFERRED) | 平均: $(format_time $AVG_TIME)/目录"
+        if [ $TRANSFER_SPEED -gt 0 ]; then
+            echo -e "传输速度: $(format_speed $TRANSFER_SPEED) (平均)"
+        fi
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+    fi
 done
 
-# 汇总
-echo "=========================================="
-echo "备份完成"
-echo "=========================================="
-echo "总计: $TOTAL"
-echo -e "${GREEN}成功: $SUCCESS${NC}"
-echo -e "${YELLOW}跳过: $SKIPPED${NC}"
-echo -e "${RED}失败: $FAILED${NC}"
-echo "=========================================="
-echo "日志文件: $LOG_FILE"
+# 计算最终统计
+END_TIME=$(date +%s)
+TOTAL_ELAPSED=$((END_TIME - START_TIME))
+if [ $TOTAL -gt 0 ]; then
+    SUCCESS_RATE=$(calc_percent $SUCCESS $TOTAL)
+else
+    SUCCESS_RATE="0.0"
+fi
+if [ $TOTAL_ELAPSED -gt 0 ]; then
+    AVG_TRANSFER_SPEED=$((TOTAL_TRANSFERRED / TOTAL_ELAPSED))
+else
+    AVG_TRANSFER_SPEED=0
+fi
 
-# 写入日志
+# 增强的最终报告
+echo ""
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}           备份完成报告${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo -e "${CYAN}📁 目录统计:${NC}"
+echo -e "   总目录数: $TOTAL"
+echo -e "   ${GREEN}✓ 成功: $SUCCESS (${SUCCESS_RATE}%)${NC}"
+echo -e "   ${YELLOW}⊘ 跳过: $SKIPPED${NC}"
+echo -e "   ${RED}✗ 失败: $FAILED${NC}"
+echo ""
+echo -e "${CYAN}📊 传输统计:${NC}"
+echo -e "   总数据量: $(format_size $TOTAL_TRANSFERRED)"
+echo -e "   总用时: $(format_time $TOTAL_ELAPSED)"
+if [ $SUCCESS -gt 0 ]; then
+    AVG_TIME_PER_DIR=$((TOTAL_ELAPSED / SUCCESS))
+    echo -e "   平均速度: $(format_time $AVG_TIME_PER_DIR)/目录"
+fi
+if [ $AVG_TRANSFER_SPEED -gt 0 ]; then
+    echo -e "   传输速度: $(format_speed $AVG_TRANSFER_SPEED) (平均)"
+fi
+echo ""
+echo -e "${CYAN}📝 日志文件:${NC} $LOG_FILE"
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+# 写入增强的日志
 echo "" >> "$LOG_FILE"
 echo "========================================" >> "$LOG_FILE"
+echo "备份完成报告" >> "$LOG_FILE"
+echo "========================================" >> "$LOG_FILE"
 echo "备份结束时间: $(date)" >> "$LOG_FILE"
-echo "总计: $TOTAL" >> "$LOG_FILE"
-echo "成功: $SUCCESS" >> "$LOG_FILE"
-echo "跳过: $SKIPPED" >> "$LOG_FILE"
-echo "失败: $FAILED" >> "$LOG_FILE"
+echo "" >> "$LOG_FILE"
+echo "目录统计:" >> "$LOG_FILE"
+echo "  总目录数: $TOTAL" >> "$LOG_FILE"
+echo "  成功: $SUCCESS (${SUCCESS_RATE}%)" >> "$LOG_FILE"
+echo "  跳过: $SKIPPED" >> "$LOG_FILE"
+echo "  失败: $FAILED" >> "$LOG_FILE"
+echo "" >> "$LOG_FILE"
+echo "传输统计:" >> "$LOG_FILE"
+echo "  总数据量: $(format_size $TOTAL_TRANSFERRED)" >> "$LOG_FILE"
+echo "  总用时: $(format_time $TOTAL_ELAPSED)" >> "$LOG_FILE"
+if [ $SUCCESS -gt 0 ]; then
+    echo "  平均速度: $(format_time $AVG_TIME_PER_DIR)/目录" >> "$LOG_FILE"
+fi
+if [ $AVG_TRANSFER_SPEED -gt 0 ]; then
+    echo "  传输速度: $(format_speed $AVG_TRANSFER_SPEED) (平均)" >> "$LOG_FILE"
+fi
 echo "========================================" >> "$LOG_FILE"
 
 # 如果有失败，退出码为1
