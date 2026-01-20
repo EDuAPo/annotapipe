@@ -46,9 +46,11 @@ field_mapping:
   线段属性: "fldexkxyUt"
   贴边属性: "fldP4J3gpj"
   盲区属性: "fld6yDTNc4"
+  水管属性: "fld8wCfGdW"
   上传nas: "fldtt8M8si"
   上传data02/dataset/od_annotations/scenes: "fldOw27qgJ"
   上传data02/dataset/lines: "fldq6i04Yu"
+  上传data02/dataset/water_pipe: "fldaflqHO5"
   更新时间: "fldBF32bL5"
 
 # =============================================================================
@@ -83,6 +85,11 @@ attribute_keywords:
     - "盲区"
     - "blind"
     - "遮挡"
+  水管:
+    - "水管"
+    - "water_pipe"
+    - "pipe"
+    - "管道"
   关键帧:
     - "关键帧"
     - "keyframe"
