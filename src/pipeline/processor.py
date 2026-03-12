@@ -65,6 +65,7 @@ class RemoteProcessor:
         server = self.ssh.server
         
         # 获取已有的 ZIP 文件
+<<<<<<< HEAD
         zip_files = set()  # 存储标准化的文件名（不带processed_前缀）
         zip_file_map = {}  # 标准文件名 -> 实际文件名的映射
         files = self.ssh.list_files(server.zip_dir, "*.zip")
@@ -74,22 +75,70 @@ class RemoteProcessor:
                 standard_name = name[len("processed_"):]
                 zip_files.add(standard_name)
                 zip_file_map[standard_name] = name
+=======
+        zip_files = set()
+        zip_actual_names = {}  # stem.zip -> actual_filename (可能带 processed_ 前缀)
+        processed_zip_stems = set()  # 已处理完成的 ZIP（通过 processed_ 前缀判断）
+        files = self.ssh.list_files(server.zip_dir, "*.zip")
+        for name in files:
+            if name.startswith("processed_"):
+                stem = name[len("processed_"):]
+                zip_files.add(stem)
+                zip_actual_names[stem] = name  # 记录实际文件名
+                processed_zip_stems.add(stem.replace('.zip', ''))
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
             else:
                 # 文件名本身就是标准名
                 zip_files.add(name)
+<<<<<<< HEAD
                 zip_file_map[name] = name
         
         # 获取已处理完成的目录（只检查当前 final_dir）
         processed_dirs = set(self.ssh.list_dirs(server.final_dir))
         
+=======
+                zip_actual_names[name] = name  # 实际文件名就是自己
+        
+        # 获取已处理完成的目录（检查当前 final_dir）
+        processed_dirs = set()
+        processed_dirs_with_path = {}  # stem -> actual_path
+        
+        current_processed = self.ssh.list_dirs(server.final_dir)
+        for stem in current_processed:
+            processed_dirs.add(stem)
+            processed_dirs_with_path[stem] = server.final_dir
+        
+        # 同时检查其他可能的 final_dir（支持多路径）
+        # 这样即使切换了 final_dir，之前处理过的数据也不会被重复处理
+        other_final_dirs = [
+            "/data02/dataset/scenesnew",
+            "/data02/dataset/lines",
+        ]
+        for other_dir in other_final_dirs:
+            if other_dir != server.final_dir:
+                other_processed = self.ssh.list_dirs(other_dir)
+                for stem in other_processed:
+                    processed_dirs.add(stem)
+                    processed_dirs_with_path[stem] = other_dir
+        
+        # 同时将 processed_ 前缀的 ZIP 对应的 stem 也加入已完成列表
+        # 这样即使 final_dir 中没有对应目录，也能识别为已处理
+        processed_dirs.update(processed_zip_stems)
+        
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         # 获取处理中的目录（断点续传支持）
         processing_dirs = set(self.ssh.list_dirs(server.process_dir))
         
         return {
             "zip_files": zip_files,
+<<<<<<< HEAD
             "zip_file_map": zip_file_map,
+=======
+            "zip_actual_names": zip_actual_names,
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
             "processed_dirs": processed_dirs,
             "processing_dirs": processing_dirs,
+            "processed_dirs_with_path": processed_dirs_with_path,
         }
     
     def process_zip(self, zip_path: str, json_path: str, stem: str) -> Tuple[bool, str]:
@@ -112,8 +161,20 @@ class RemoteProcessor:
             if not self.ssh.upload_file(json_path, remote_json):
                 return False, "上传 JSON 文件失败"
         
+<<<<<<< HEAD
         # 检查是否有 ZIP 文件
         has_zip = self.ssh.file_exists(zip_path)
+=======
+        # 执行处理脚本
+        cmd = (
+            f"python3 {REMOTE_WORKER_SCRIPT} "
+            f"--zip '{zip_path}' "
+            f"--json '{remote_json}' "
+            f"--out '{server.process_dir}' "
+            f"--stem '{stem}' "
+            f"--rename_json '{self.config.rename_json}'"
+        )
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         
         if has_zip:
             # 验证 ZIP 文件完整性
@@ -236,6 +297,7 @@ class RemoteProcessor:
         
         for sample_path in sample_paths:
             if self.ssh.file_exists(sample_path):
+<<<<<<< HEAD
                 logger.debug(f"  ✓ 找到: {sample_path}")
                 # 尝试多种 JSON 格式
                 cmd = (
@@ -254,10 +316,22 @@ class RemoteProcessor:
                     logger.debug(f"  ✗ 读取失败 status={status}, out={out.strip()}, err={err.strip()}")
             else:
                 logger.debug(f"  ✗ 不存在: {sample_path}")
+=======
+                # 使用更健壮的命令，处理各种JSON格式
+                cmd = f"python3 -c \"import json, sys; data = json.load(open('{sample_path}')); print(len(data) if hasattr(data, '__len__') and not isinstance(data, str) else 0)\" 2>/dev/null || echo 0"
+                status, out, _ = self.ssh.exec_command(cmd)
+                try:
+                    count = int(out.strip())
+                    if count > 0:
+                        return count
+                except ValueError:
+                    pass
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         
         logger.debug(f"⚠ 未找到关键帧数据: {data_dir}")
         return 0
     
+<<<<<<< HEAD
     def get_keyframe_count_from_zip(self, zip_path: str) -> int:
         """从ZIP文件中读取关键帧数量（不解压整个ZIP）"""
         # 创建临时目录
@@ -298,15 +372,26 @@ class RemoteProcessor:
             self.ssh.exec_command(f"rm -rf '{temp_dir}'")
     
     def move_to_final(self, stem: str) -> Tuple[bool, str]:
+=======
+    def move_to_final(self, stem: str, final_dir: str = None, actual_zip_name: str = None) -> Tuple[bool, str]:
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         """移动到最终目录，并清理原始 ZIP"""
         server = self.ssh.server
         src = f"{server.process_dir}/{stem}"
-        dst = f"{server.final_dir}/{stem}"
-        zip_path = f"{server.zip_dir}/{stem}.zip"
+        
+        # 使用指定的final_dir，如果没有指定则使用server的默认final_dir
+        target_final_dir = final_dir or server.final_dir
+        dst = f"{target_final_dir}/{stem}"
+        # 使用实际的ZIP文件名（可能带 processed_ 前缀）
+        zip_filename = actual_zip_name or f"{stem}.zip"
+        zip_path = f"{server.zip_dir}/{zip_filename}"
         
         # 检查源目录
         if not self.ssh.dir_exists(src):
             return False, "源目录不存在"
+        
+        # 确保目标目录存在
+        self.ssh.mkdir_p(target_final_dir)
         
         # 如果目标目录已存在，直接删除（不备份）
         if self.ssh.dir_exists(dst):
@@ -319,9 +404,11 @@ class RemoteProcessor:
             return False, f"移动失败: {err}"
         
         # 整个流程完成后，处理原始 ZIP（避免中途失败导致重复上传）
+        # 只有当 ZIP 文件还没有 processed_ 前缀时才需要重命名
         if self.config.zip_after_process == "rename":
-            new_name = f"{server.zip_dir}/processed_{stem}.zip"
-            self.ssh.exec_command(f"mv '{zip_path}' '{new_name}'")
+            if not zip_filename.startswith("processed_"):
+                new_name = f"{server.zip_dir}/processed_{stem}.zip"
+                self.ssh.exec_command(f"mv '{zip_path}' '{new_name}'")
         elif self.config.zip_after_process == "delete":
             self.ssh.exec_command(f"rm -f '{zip_path}'")
         

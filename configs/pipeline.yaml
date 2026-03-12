@@ -12,8 +12,13 @@ servers:
     # password 通过环境变量 SERVER_PRIMARY_PASSWORD 设置
     zip_dir: "/data02/rere_zips"
     process_dir: "/data02/processing"
+<<<<<<< HEAD
     # final_dir 可选值: /data02/dataset/scenesnew, /data02/dataset/lines, /data02/dataset/od_annotations/scenes
     final_dir: "/data02/dataset/od_annotations/scenes"
+=======
+    # final_dir 可选值: /data02/dataset/scenesnew, /data02/dataset/lines
+    final_dir: /data02/dataset/od_annotations/scenes
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
     priority: 1
     enabled: true
 
@@ -43,13 +48,18 @@ dataweave:
     - "dataweave://my/TO_RERE/7Lidar_data/{filename}"
     - "dataweave://my/TO_RERE/已上传平台/{filename}"
     - "dataweave://my/TO_RERE/剔除非关键帧&重新上传/{filename}"
+    - "dataweave://my/TO_RERE/{filename}"
     - "dataweave://my/TO_RERE/12-9/{filename}"
 
 # =============================================================================
 # 本地目录配置
 # =============================================================================
 local:
+<<<<<<< HEAD
   temp_dir: "/media/zgw/T7/pipeline_downzips/"  # ZIP临时存储
+=======
+  temp_dir: "/media/zgw/T7/rere"  # ZIP临时存储
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
   check_dir: null  # 检查报告目录，null则使用temp_dir/check_data
 
 # =============================================================================

@@ -1,0 +1,1876 @@
+{
+  "image017.jpeg": {
+    "backed_up": true
+  },
+  "image021.jpeg": {
+    "backed_up": true
+  },
+  "image027.jpg": {
+    "backed_up": true
+  },
+  "image003.jpg": {
+    "backed_up": true
+  },
+  "image014.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104248_258_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image012.jpg": {
+    "backed_up": true
+  },
+  "20251230_104256_348_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image001.jpg": {
+    "backed_up": true
+  },
+  "image010.jpeg": {
+    "backed_up": true
+  },
+  "image023.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104250_350_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image005.jpg": {
+    "backed_up": true
+  },
+  "image024.jpeg": {
+    "backed_up": true
+  },
+  "image026.jpg": {
+    "backed_up": true
+  },
+  "image008.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104249_826_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image018.jpeg": {
+    "backed_up": true
+  },
+  "image013.jpg": {
+    "backed_up": true
+  },
+  "20251230_104257_342_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "20251230_104257_849_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image004.jpg": {
+    "backed_up": true
+  },
+  "20251230_104247_148_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image028.png": {
+    "backed_up": true
+  },
+  "image020.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104307_341_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image025.jpeg": {
+    "backed_up": true
+  },
+  "image016.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104256_858_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "20251230_104307_833_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image002.jpg": {
+    "backed_up": true
+  },
+  "image019.jpeg": {
+    "backed_up": true
+  },
+  "image006.jpg": {
+    "backed_up": true
+  },
+  "20251230_104247_625_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image007.jpg": {
+    "backed_up": true
+  },
+  "image009.jpg": {
+    "backed_up": true
+  },
+  "image011.jpg": {
+    "backed_up": true
+  },
+  "20251230_104249_344_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image000.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104248_836_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "20251230_104246_665_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "20251230_104308_358_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "image015.jpeg": {
+    "backed_up": true
+  },
+  "image022.jpeg": {
+    "backed_up": true
+  },
+  "imag1.jpeg": {
+    "backed_up": true
+  },
+  "20251230_104246_142_scale_0.20_undistorted.jpg": {
+    "backed_up": true
+  },
+  "segout/masks_json/image001_updated.json": {
+    "backed_up": true,
+    "size": 23957
+  },
+  "segout/masks_json/image003_updated.json": {
+    "backed_up": true,
+    "size": 80286
+  },
+  "segout/masks_json/20251230_104256_858_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41161
+  },
+  "segout/masks_json/20251230_104248_258_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 60441
+  },
+  "segout/masks_json/image007_updated.json": {
+    "backed_up": true,
+    "size": 3289
+  },
+  "segout/masks_json/20251230_104248_836_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 62677
+  },
+  "segout/masks_json/image016_updated.json": {
+    "backed_up": true,
+    "size": 10430
+  },
+  "segout/masks_json/image015_updated.json": {
+    "backed_up": true,
+    "size": 1456
+  },
+  "segout/masks_json/image018_updated.json": {
+    "backed_up": true,
+    "size": 3274
+  },
+  "segout/masks_json/image017_updated.json": {
+    "backed_up": true,
+    "size": 3136
+  },
+  "segout/masks_json/20251230_104247_148_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41155
+  },
+  "segout/masks_json/20251230_104249_826_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41641
+  },
+  "segout/masks_json/image024_updated.json": {
+    "backed_up": true,
+    "size": 5027
+  },
+  "segout/masks_json/image008_updated.json": {
+    "backed_up": true,
+    "size": 19461
+  },
+  "segout/masks_json/image002_updated.json": {
+    "backed_up": true,
+    "size": 6704
+  },
+  "segout/masks_json/20251230_104257_342_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 71130
+  },
+  "segout/masks_json/20251230_104249_344_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41769
+  },
+  "segout/masks_json/image005_updated.json": {
+    "backed_up": true,
+    "size": 3338
+  },
+  "segout/masks_json/image012_updated.json": {
+    "backed_up": true,
+    "size": 10457
+  },
+  "segout/masks_json/image025_updated.json": {
+    "backed_up": true,
+    "size": 3030
+  },
+  "segout/masks_json/image006_updated.json": {
+    "backed_up": true,
+    "size": 8483
+  },
+  "segout/masks_json/20251230_104247_625_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 59753
+  },
+  "segout/masks_json/image010_updated.json": {
+    "backed_up": true,
+    "size": 3051
+  },
+  "segout/masks_json/image013_updated.json": {
+    "backed_up": true,
+    "size": 2751
+  },
+  "segout/masks_json/image021_updated.json": {
+    "backed_up": true,
+    "size": 8049
+  },
+  "segout/masks_json/20251230_104307_833_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 32396
+  },
+  "segout/masks_json/image011_updated.json": {
+    "backed_up": true,
+    "size": 52294
+  },
+  "segout/masks_json/image000_updated.json": {
+    "backed_up": true,
+    "size": 2297
+  },
+  "segout/masks_json/image026_updated.json": {
+    "backed_up": true,
+    "size": 12832
+  },
+  "segout/masks_json/imag1_updated.json": {
+    "backed_up": true,
+    "size": 4369
+  },
+  "segout/masks_json/image023_updated.json": {
+    "backed_up": true,
+    "size": 12776
+  },
+  "segout/masks_json/20251230_104308_358_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 32405
+  },
+  "segout/masks_json/image020_updated.json": {
+    "backed_up": true,
+    "size": 5505
+  },
+  "segout/masks_json/image019_updated.json": {
+    "backed_up": true,
+    "size": 13969
+  },
+  "segout/masks_json/image027_updated.json": {
+    "backed_up": true,
+    "size": 45341
+  },
+  "segout/masks_json/image014_updated.json": {
+    "backed_up": true,
+    "size": 3954
+  },
+  "segout/masks_json/image028_updated.json": {
+    "backed_up": true,
+    "size": 81582
+  },
+  "segout/masks_json/image022_updated.json": {
+    "backed_up": true,
+    "size": 17165
+  },
+  "segout/masks_json/image004_updated.json": {
+    "backed_up": true,
+    "size": 87249
+  },
+  "segout/masks_json/20251230_104307_341_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 32425
+  },
+  "segout/labels/image027.txt": {
+    "backed_up": true,
+    "size": 607
+  },
+  "segout/labels/image000.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/20251230_104257_342_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 265
+  },
+  "segout/labels/image016.txt": {
+    "backed_up": true,
+    "size": 303
+  },
+  "segout/labels/image004.txt": {
+    "backed_up": true,
+    "size": 1063
+  },
+  "segout/labels/image007.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/image014.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/image025.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/20251230_104307_833_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 113
+  },
+  "segout/labels/image026.txt": {
+    "backed_up": true,
+    "size": 189
+  },
+  "segout/labels/image021.txt": {
+    "backed_up": true,
+    "size": 265
+  },
+  "segout/labels/20251230_104256_858_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/20251230_104248_258_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 227
+  },
+  "segout/labels/image015.txt": {
+    "backed_up": true,
+    "size": 37
+  },
+  "segout/labels/image023.txt": {
+    "backed_up": true,
+    "size": 455
+  },
+  "segout/labels/image010.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/image011.txt": {
+    "backed_up": true,
+    "size": 303
+  },
+  "segout/labels/image020.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/20251230_104247_625_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 227
+  },
+  "segout/labels/20251230_104249_344_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/20251230_104248_836_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 227
+  },
+  "segout/labels/image013.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/image019.txt": {
+    "backed_up": true,
+    "size": 455
+  },
+  "segout/labels/image005.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/image017.txt": {
+    "backed_up": true,
+    "size": 113
+  },
+  "segout/labels/image024.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/20251230_104249_826_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/image018.txt": {
+    "backed_up": true,
+    "size": 75
+  },
+  "segout/labels/image012.txt": {
+    "backed_up": true,
+    "size": 227
+  },
+  "segout/labels/image022.txt": {
+    "backed_up": true,
+    "size": 531
+  },
+  "segout/labels/image028.txt": {
+    "backed_up": true,
+    "size": 1025
+  },
+  "segout/labels/image001.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/20251230_104307_341_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 113
+  },
+  "segout/labels/image003.txt": {
+    "backed_up": true,
+    "size": 835
+  },
+  "segout/labels/image002.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/image008.txt": {
+    "backed_up": true,
+    "size": 455
+  },
+  "segout/labels/20251230_104308_358_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 113
+  },
+  "segout/labels/20251230_104247_148_scale_0.20_undistorted.txt": {
+    "backed_up": true,
+    "size": 151
+  },
+  "segout/labels/image006.txt": {
+    "backed_up": true,
+    "size": 189
+  },
+  "segout/labels/imag1.txt": {
+    "backed_up": true,
+    "size": 113
+  },
+  "segout/pipeline_config.json": {
+    "backed_up": true,
+    "size": 437
+  },
+  "segout/masks/20251230_104307_833_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7929
+  },
+  "segout/masks/20251230_104307_833_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7922
+  },
+  "segout/masks/20251230_104307_833_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7830
+  },
+  "segout/masks/image021/segment_005.png": {
+    "backed_up": true,
+    "size": 758
+  },
+  "segout/masks/image021/segment_003.png": {
+    "backed_up": true,
+    "size": 607
+  },
+  "segout/masks/image021/segment_007.png": {
+    "backed_up": true,
+    "size": 840
+  },
+  "segout/masks/image021/segment_002.png": {
+    "backed_up": true,
+    "size": 431
+  },
+  "segout/masks/image021/segment_001.png": {
+    "backed_up": true,
+    "size": 592
+  },
+  "segout/masks/image021/segment_006.png": {
+    "backed_up": true,
+    "size": 784
+  },
+  "segout/masks/image014/segment_003.png": {
+    "backed_up": true,
+    "size": 543
+  },
+  "segout/masks/image021/segment_004.png": {
+    "backed_up": true,
+    "size": 649
+  },
+  "segout/masks/image014/segment_002.png": {
+    "backed_up": true,
+    "size": 746
+  },
+  "segout/masks/image014/segment_001.png": {
+    "backed_up": true,
+    "size": 464
+  },
+  "segout/masks/image014/segment_004.png": {
+    "backed_up": true,
+    "size": 421
+  },
+  "segout/masks/image002/segment_003.png": {
+    "backed_up": true,
+    "size": 954
+  },
+  "segout/masks/image002/segment_002.png": {
+    "backed_up": true,
+    "size": 1136
+  },
+  "segout/masks/image002/segment_001.png": {
+    "backed_up": true,
+    "size": 1169
+  },
+  "segout/masks/image002/segment_004.png": {
+    "backed_up": true,
+    "size": 971
+  },
+  "segout/masks/image013/segment_001.png": {
+    "backed_up": true,
+    "size": 7946
+  },
+  "segout/masks/20251230_104307_341_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7925
+  },
+  "segout/masks/20251230_104307_341_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7831
+  },
+  "segout/masks/image026/segment_005.png": {
+    "backed_up": true,
+    "size": 2035
+  },
+  "segout/masks/image026/segment_003.png": {
+    "backed_up": true,
+    "size": 2229
+  },
+  "segout/masks/image026/segment_002.png": {
+    "backed_up": true,
+    "size": 1355
+  },
+  "segout/masks/image026/segment_001.png": {
+    "backed_up": true,
+    "size": 1295
+  },
+  "segout/masks/image026/segment_004.png": {
+    "backed_up": true,
+    "size": 1719
+  },
+  "segout/masks/image022/segment_005.png": {
+    "backed_up": true,
+    "size": 889
+  },
+  "segout/masks/image022/segment_003.png": {
+    "backed_up": true,
+    "size": 995
+  },
+  "segout/masks/image022/segment_014.png": {
+    "backed_up": true,
+    "size": 538
+  },
+  "segout/masks/image022/segment_009.png": {
+    "backed_up": true,
+    "size": 698
+  },
+  "segout/masks/image022/segment_011.png": {
+    "backed_up": true,
+    "size": 454
+  },
+  "segout/masks/image022/segment_007.png": {
+    "backed_up": true,
+    "size": 505
+  },
+  "segout/masks/image022/segment_010.png": {
+    "backed_up": true,
+    "size": 495
+  },
+  "segout/masks/image022/segment_002.png": {
+    "backed_up": true,
+    "size": 1464
+  },
+  "segout/masks/image022/segment_013.png": {
+    "backed_up": true,
+    "size": 561
+  },
+  "segout/masks/image022/segment_008.png": {
+    "backed_up": true,
+    "size": 762
+  },
+  "segout/masks/image022/segment_001.png": {
+    "backed_up": true,
+    "size": 444
+  },
+  "segout/masks/image022/segment_012.png": {
+    "backed_up": true,
+    "size": 607
+  },
+  "segout/masks/image022/segment_006.png": {
+    "backed_up": true,
+    "size": 994
+  },
+  "segout/masks/image022/segment_004.png": {
+    "backed_up": true,
+    "size": 756
+  },
+  "segout/masks/20251230_104247_148_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 6895
+  },
+  "segout/masks/20251230_104247_148_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 8170
+  },
+  "segout/masks/20251230_104247_148_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 8100
+  },
+  "segout/masks/20251230_104247_148_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 6887
+  },
+  "segout/masks/image024/segment_003.png": {
+    "backed_up": true,
+    "size": 562
+  },
+  "segout/masks/image024/segment_002.png": {
+    "backed_up": true,
+    "size": 881
+  },
+  "segout/masks/image024/segment_001.png": {
+    "backed_up": true,
+    "size": 852
+  },
+  "segout/masks/image024/segment_004.png": {
+    "backed_up": true,
+    "size": 676
+  },
+  "segout/masks/image004/segment_016.png": {
+    "backed_up": true,
+    "size": 2629
+  },
+  "segout/masks/image004/segment_017.png": {
+    "backed_up": true,
+    "size": 1508
+  },
+  "segout/masks/image004/segment_025.png": {
+    "backed_up": true,
+    "size": 1912
+  },
+  "segout/masks/image004/segment_005.png": {
+    "backed_up": true,
+    "size": 2029
+  },
+  "segout/masks/image004/segment_014.png": {
+    "backed_up": true,
+    "size": 2367
+  },
+  "segout/masks/image004/segment_020.png": {
+    "backed_up": true,
+    "size": 2141
+  },
+  "segout/masks/image004/segment_003.png": {
+    "backed_up": true,
+    "size": 2349
+  },
+  "segout/masks/image004/segment_009.png": {
+    "backed_up": true,
+    "size": 2455
+  },
+  "segout/masks/image004/segment_011.png": {
+    "backed_up": true,
+    "size": 1699
+  },
+  "segout/masks/image004/segment_027.png": {
+    "backed_up": true,
+    "size": 1630
+  },
+  "segout/masks/image004/segment_007.png": {
+    "backed_up": true,
+    "size": 2470
+  },
+  "segout/masks/image004/segment_023.png": {
+    "backed_up": true,
+    "size": 2008
+  },
+  "segout/masks/image004/segment_010.png": {
+    "backed_up": true,
+    "size": 1514
+  },
+  "segout/masks/image004/segment_018.png": {
+    "backed_up": true,
+    "size": 1722
+  },
+  "segout/masks/image004/segment_022.png": {
+    "backed_up": true,
+    "size": 1980
+  },
+  "segout/masks/image004/segment_002.png": {
+    "backed_up": true,
+    "size": 3102
+  },
+  "segout/masks/image004/segment_008.png": {
+    "backed_up": true,
+    "size": 2932
+  },
+  "segout/masks/image004/segment_026.png": {
+    "backed_up": true,
+    "size": 1776
+  },
+  "segout/masks/image004/segment_024.png": {
+    "backed_up": true,
+    "size": 2057
+  },
+  "segout/masks/image004/segment_021.png": {
+    "backed_up": true,
+    "size": 2069
+  },
+  "segout/masks/image004/segment_013.png": {
+    "backed_up": true,
+    "size": 2587
+  },
+  "segout/masks/image004/segment_028.png": {
+    "backed_up": true,
+    "size": 1420
+  },
+  "segout/masks/image004/segment_001.png": {
+    "backed_up": true,
+    "size": 2799
+  },
+  "segout/masks/image004/segment_012.png": {
+    "backed_up": true,
+    "size": 1865
+  },
+  "segout/masks/image004/segment_006.png": {
+    "backed_up": true,
+    "size": 2138
+  },
+  "segout/masks/image004/segment_015.png": {
+    "backed_up": true,
+    "size": 2206
+  },
+  "segout/masks/image004/segment_004.png": {
+    "backed_up": true,
+    "size": 2567
+  },
+  "segout/masks/image004/segment_019.png": {
+    "backed_up": true,
+    "size": 2036
+  },
+  "segout/masks/image017/segment_003.png": {
+    "backed_up": true,
+    "size": 583
+  },
+  "segout/masks/image017/segment_002.png": {
+    "backed_up": true,
+    "size": 618
+  },
+  "segout/masks/image017/segment_001.png": {
+    "backed_up": true,
+    "size": 553
+  },
+  "segout/masks/image012/segment_003.png": {
+    "backed_up": true,
+    "size": 879
+  },
+  "segout/masks/image012/segment_005.png": {
+    "backed_up": true,
+    "size": 1313
+  },
+  "segout/masks/image012/segment_002.png": {
+    "backed_up": true,
+    "size": 983
+  },
+  "segout/masks/image012/segment_001.png": {
+    "backed_up": true,
+    "size": 887
+  },
+  "segout/masks/image012/segment_004.png": {
+    "backed_up": true,
+    "size": 1101
+  },
+  "segout/masks/image012/segment_006.png": {
+    "backed_up": true,
+    "size": 1496
+  },
+  "segout/masks/20251230_104256_858_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7604
+  },
+  "segout/masks/20251230_104256_858_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7502
+  },
+  "segout/masks/20251230_104256_858_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7512
+  },
+  "segout/masks/20251230_104256_858_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7450
+  },
+  "segout/masks/image001/segment_002.png": {
+    "backed_up": true,
+    "size": 4492
+  },
+  "segout/masks/image001/segment_003.png": {
+    "backed_up": true,
+    "size": 4518
+  },
+  "segout/masks/image001/segment_001.png": {
+    "backed_up": true,
+    "size": 3922
+  },
+  "segout/masks/image001/segment_004.png": {
+    "backed_up": true,
+    "size": 4238
+  },
+  "segout/masks/image005/segment_002.png": {
+    "backed_up": true,
+    "size": 1117
+  },
+  "segout/masks/image005/segment_001.png": {
+    "backed_up": true,
+    "size": 980
+  },
+  "segout/masks/image027/segment_005.png": {
+    "backed_up": true,
+    "size": 1766
+  },
+  "segout/masks/image027/segment_016.png": {
+    "backed_up": true,
+    "size": 1977
+  },
+  "segout/masks/image027/segment_014.png": {
+    "backed_up": true,
+    "size": 1739
+  },
+  "segout/masks/image027/segment_003.png": {
+    "backed_up": true,
+    "size": 2131
+  },
+  "segout/masks/image027/segment_011.png": {
+    "backed_up": true,
+    "size": 1552
+  },
+  "segout/masks/image027/segment_009.png": {
+    "backed_up": true,
+    "size": 1419
+  },
+  "segout/masks/image027/segment_007.png": {
+    "backed_up": true,
+    "size": 2387
+  },
+  "segout/masks/image027/segment_010.png": {
+    "backed_up": true,
+    "size": 1367
+  },
+  "segout/masks/image027/segment_002.png": {
+    "backed_up": true,
+    "size": 2441
+  },
+  "segout/masks/image027/segment_008.png": {
+    "backed_up": true,
+    "size": 2116
+  },
+  "segout/masks/image027/segment_013.png": {
+    "backed_up": true,
+    "size": 1716
+  },
+  "segout/masks/image027/segment_001.png": {
+    "backed_up": true,
+    "size": 2341
+  },
+  "segout/masks/image027/segment_012.png": {
+    "backed_up": true,
+    "size": 2102
+  },
+  "segout/masks/image027/segment_006.png": {
+    "backed_up": true,
+    "size": 1838
+  },
+  "segout/masks/image027/segment_015.png": {
+    "backed_up": true,
+    "size": 1908
+  },
+  "segout/masks/image027/segment_004.png": {
+    "backed_up": true,
+    "size": 2092
+  },
+  "segout/masks/20251230_104248_836_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7467
+  },
+  "segout/masks/20251230_104248_836_scale_0.20_undistorted/segment_005.png": {
+    "backed_up": true,
+    "size": 7775
+  },
+  "segout/masks/20251230_104248_836_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7743
+  },
+  "segout/masks/20251230_104248_836_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7720
+  },
+  "segout/masks/20251230_104248_836_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7543
+  },
+  "segout/masks/20251230_104248_836_scale_0.20_undistorted/segment_006.png": {
+    "backed_up": true,
+    "size": 7562
+  },
+  "segout/masks/image019/segment_005.png": {
+    "backed_up": true,
+    "size": 890
+  },
+  "segout/masks/image019/segment_003.png": {
+    "backed_up": true,
+    "size": 399
+  },
+  "segout/masks/image019/segment_009.png": {
+    "backed_up": true,
+    "size": 648
+  },
+  "segout/masks/image019/segment_011.png": {
+    "backed_up": true,
+    "size": 766
+  },
+  "segout/masks/image019/segment_007.png": {
+    "backed_up": true,
+    "size": 675
+  },
+  "segout/masks/image019/segment_010.png": {
+    "backed_up": true,
+    "size": 836
+  },
+  "segout/masks/image019/segment_008.png": {
+    "backed_up": true,
+    "size": 560
+  },
+  "segout/masks/image019/segment_002.png": {
+    "backed_up": true,
+    "size": 833
+  },
+  "segout/masks/image019/segment_001.png": {
+    "backed_up": true,
+    "size": 582
+  },
+  "segout/masks/image019/segment_006.png": {
+    "backed_up": true,
+    "size": 472
+  },
+  "segout/masks/image019/segment_012.png": {
+    "backed_up": true,
+    "size": 562
+  },
+  "segout/masks/image019/segment_004.png": {
+    "backed_up": true,
+    "size": 927
+  },
+  "segout/masks/image020/segment_003.png": {
+    "backed_up": true,
+    "size": 544
+  },
+  "segout/masks/image020/segment_002.png": {
+    "backed_up": true,
+    "size": 1144
+  },
+  "segout/masks/image020/segment_004.png": {
+    "backed_up": true,
+    "size": 815
+  },
+  "segout/masks/image020/segment_001.png": {
+    "backed_up": true,
+    "size": 831
+  },
+  "segout/masks/image028/segment_016.png": {
+    "backed_up": true,
+    "size": 2021
+  },
+  "segout/masks/image028/segment_005.png": {
+    "backed_up": true,
+    "size": 1466
+  },
+  "segout/masks/image028/segment_025.png": {
+    "backed_up": true,
+    "size": 1989
+  },
+  "segout/masks/image028/segment_017.png": {
+    "backed_up": true,
+    "size": 2899
+  },
+  "segout/masks/image028/segment_014.png": {
+    "backed_up": true,
+    "size": 1569
+  },
+  "segout/masks/image028/segment_020.png": {
+    "backed_up": true,
+    "size": 1179
+  },
+  "segout/masks/image028/segment_009.png": {
+    "backed_up": true,
+    "size": 1815
+  },
+  "segout/masks/image028/segment_003.png": {
+    "backed_up": true,
+    "size": 2307
+  },
+  "segout/masks/image028/segment_011.png": {
+    "backed_up": true,
+    "size": 2607
+  },
+  "segout/masks/image028/segment_023.png": {
+    "backed_up": true,
+    "size": 1839
+  },
+  "segout/masks/image028/segment_007.png": {
+    "backed_up": true,
+    "size": 2587
+  },
+  "segout/masks/image028/segment_027.png": {
+    "backed_up": true,
+    "size": 1850
+  },
+  "segout/masks/image028/segment_010.png": {
+    "backed_up": true,
+    "size": 1823
+  },
+  "segout/masks/image028/segment_018.png": {
+    "backed_up": true,
+    "size": 2248
+  },
+  "segout/masks/image028/segment_002.png": {
+    "backed_up": true,
+    "size": 2824
+  },
+  "segout/masks/image028/segment_022.png": {
+    "backed_up": true,
+    "size": 2054
+  },
+  "segout/masks/image028/segment_008.png": {
+    "backed_up": true,
+    "size": 2593
+  },
+  "segout/masks/image028/segment_026.png": {
+    "backed_up": true,
+    "size": 1583
+  },
+  "segout/masks/image028/segment_021.png": {
+    "backed_up": true,
+    "size": 1897
+  },
+  "segout/masks/image028/segment_024.png": {
+    "backed_up": true,
+    "size": 2307
+  },
+  "segout/masks/image028/segment_013.png": {
+    "backed_up": true,
+    "size": 2049
+  },
+  "segout/masks/image028/segment_001.png": {
+    "backed_up": true,
+    "size": 2956
+  },
+  "segout/masks/image028/segment_012.png": {
+    "backed_up": true,
+    "size": 2026
+  },
+  "segout/masks/image028/segment_006.png": {
+    "backed_up": true,
+    "size": 1805
+  },
+  "segout/masks/image028/segment_015.png": {
+    "backed_up": true,
+    "size": 1549
+  },
+  "segout/masks/image028/segment_019.png": {
+    "backed_up": true,
+    "size": 2176
+  },
+  "segout/masks/image028/segment_004.png": {
+    "backed_up": true,
+    "size": 1914
+  },
+  "segout/masks/20251230_104249_344_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7678
+  },
+  "segout/masks/20251230_104249_344_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7771
+  },
+  "segout/masks/20251230_104249_344_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7527
+  },
+  "segout/masks/20251230_104249_344_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7542
+  },
+  "segout/masks/image008/segment_005.png": {
+    "backed_up": true,
+    "size": 819
+  },
+  "segout/masks/image008/segment_003.png": {
+    "backed_up": true,
+    "size": 1289
+  },
+  "segout/masks/image008/segment_009.png": {
+    "backed_up": true,
+    "size": 1250
+  },
+  "segout/masks/image008/segment_011.png": {
+    "backed_up": true,
+    "size": 810
+  },
+  "segout/masks/image008/segment_007.png": {
+    "backed_up": true,
+    "size": 1152
+  },
+  "segout/masks/image008/segment_010.png": {
+    "backed_up": true,
+    "size": 837
+  },
+  "segout/masks/image008/segment_002.png": {
+    "backed_up": true,
+    "size": 959
+  },
+  "segout/masks/image008/segment_008.png": {
+    "backed_up": true,
+    "size": 1300
+  },
+  "segout/masks/image008/segment_001.png": {
+    "backed_up": true,
+    "size": 1159
+  },
+  "segout/masks/image008/segment_012.png": {
+    "backed_up": true,
+    "size": 847
+  },
+  "segout/masks/image008/segment_006.png": {
+    "backed_up": true,
+    "size": 957
+  },
+  "segout/masks/image008/segment_004.png": {
+    "backed_up": true,
+    "size": 865
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_005.png": {
+    "backed_up": true,
+    "size": 7569
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_007.png": {
+    "backed_up": true,
+    "size": 7473
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7233
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7293
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7378
+  },
+  "segout/masks/image011/segment_005.png": {
+    "backed_up": true,
+    "size": 4716
+  },
+  "segout/masks/image011/segment_003.png": {
+    "backed_up": true,
+    "size": 5025
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_006.png": {
+    "backed_up": true,
+    "size": 7502
+  },
+  "segout/masks/20251230_104257_342_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7491
+  },
+  "segout/masks/image011/segment_001.png": {
+    "backed_up": true,
+    "size": 4446
+  },
+  "segout/masks/image011/segment_008.png": {
+    "backed_up": true,
+    "size": 4193
+  },
+  "segout/masks/image011/segment_007.png": {
+    "backed_up": true,
+    "size": 4143
+  },
+  "segout/masks/image011/segment_002.png": {
+    "backed_up": true,
+    "size": 5993
+  },
+  "segout/masks/image011/segment_006.png": {
+    "backed_up": true,
+    "size": 4616
+  },
+  "segout/masks/image011/segment_004.png": {
+    "backed_up": true,
+    "size": 4484
+  },
+  "segout/masks/image016/segment_003.png": {
+    "backed_up": true,
+    "size": 681
+  },
+  "segout/masks/image016/segment_005.png": {
+    "backed_up": true,
+    "size": 1067
+  },
+  "segout/masks/image016/segment_007.png": {
+    "backed_up": true,
+    "size": 631
+  },
+  "segout/masks/image016/segment_002.png": {
+    "backed_up": true,
+    "size": 943
+  },
+  "segout/masks/image016/segment_001.png": {
+    "backed_up": true,
+    "size": 889
+  },
+  "segout/masks/image016/segment_008.png": {
+    "backed_up": true,
+    "size": 674
+  },
+  "segout/masks/image016/segment_006.png": {
+    "backed_up": true,
+    "size": 806
+  },
+  "segout/masks/image016/segment_004.png": {
+    "backed_up": true,
+    "size": 579
+  },
+  "segout/masks/image025/segment_001.png": {
+    "backed_up": true,
+    "size": 967
+  },
+  "segout/masks/image025/segment_002.png": {
+    "backed_up": true,
+    "size": 893
+  },
+  "segout/masks/image010/segment_001.png": {
+    "backed_up": true,
+    "size": 898
+  },
+  "segout/masks/20251230_104249_826_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7596
+  },
+  "segout/masks/20251230_104249_826_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7574
+  },
+  "segout/masks/20251230_104249_826_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7561
+  },
+  "segout/masks/image023/segment_005.png": {
+    "backed_up": true,
+    "size": 530
+  },
+  "segout/masks/image023/segment_003.png": {
+    "backed_up": true,
+    "size": 757
+  },
+  "segout/masks/image023/segment_009.png": {
+    "backed_up": true,
+    "size": 591
+  },
+  "segout/masks/image023/segment_007.png": {
+    "backed_up": true,
+    "size": 566
+  },
+  "segout/masks/image023/segment_010.png": {
+    "backed_up": true,
+    "size": 594
+  },
+  "segout/masks/image023/segment_011.png": {
+    "backed_up": true,
+    "size": 481
+  },
+  "segout/masks/image023/segment_002.png": {
+    "backed_up": true,
+    "size": 568
+  },
+  "segout/masks/image023/segment_001.png": {
+    "backed_up": true,
+    "size": 1013
+  },
+  "segout/masks/image023/segment_012.png": {
+    "backed_up": true,
+    "size": 397
+  },
+  "segout/masks/image023/segment_008.png": {
+    "backed_up": true,
+    "size": 597
+  },
+  "segout/masks/image023/segment_006.png": {
+    "backed_up": true,
+    "size": 565
+  },
+  "segout/masks/image023/segment_004.png": {
+    "backed_up": true,
+    "size": 569
+  },
+  "segout/masks/imag1/segment_002.png": {
+    "backed_up": true,
+    "size": 983
+  },
+  "segout/masks/imag1/segment_003.png": {
+    "backed_up": true,
+    "size": 834
+  },
+  "segout/masks/imag1/segment_001.png": {
+    "backed_up": true,
+    "size": 856
+  },
+  "segout/masks/image006/segment_005.png": {
+    "backed_up": true,
+    "size": 1199
+  },
+  "segout/masks/image006/segment_003.png": {
+    "backed_up": true,
+    "size": 1206
+  },
+  "segout/masks/image006/segment_002.png": {
+    "backed_up": true,
+    "size": 1100
+  },
+  "segout/masks/image006/segment_001.png": {
+    "backed_up": true,
+    "size": 979
+  },
+  "segout/masks/image006/segment_004.png": {
+    "backed_up": true,
+    "size": 895
+  },
+  "segout/masks/image007/segment_002.png": {
+    "backed_up": true,
+    "size": 1058
+  },
+  "segout/masks/image007/segment_001.png": {
+    "backed_up": true,
+    "size": 1002
+  },
+  "segout/masks/image003/segment_016.png": {
+    "backed_up": true,
+    "size": 2391
+  },
+  "segout/masks/image003/segment_017.png": {
+    "backed_up": true,
+    "size": 2136
+  },
+  "segout/masks/image003/segment_005.png": {
+    "backed_up": true,
+    "size": 2832
+  },
+  "segout/masks/image003/segment_014.png": {
+    "backed_up": true,
+    "size": 3324
+  },
+  "segout/masks/image003/segment_003.png": {
+    "backed_up": true,
+    "size": 2504
+  },
+  "segout/masks/image003/segment_020.png": {
+    "backed_up": true,
+    "size": 2469
+  },
+  "segout/masks/image003/segment_009.png": {
+    "backed_up": true,
+    "size": 2652
+  },
+  "segout/masks/image003/segment_011.png": {
+    "backed_up": true,
+    "size": 2603
+  },
+  "segout/masks/image003/segment_007.png": {
+    "backed_up": true,
+    "size": 2153
+  },
+  "segout/masks/image003/segment_010.png": {
+    "backed_up": true,
+    "size": 2181
+  },
+  "segout/masks/image003/segment_022.png": {
+    "backed_up": true,
+    "size": 2208
+  },
+  "segout/masks/image003/segment_018.png": {
+    "backed_up": true,
+    "size": 2760
+  },
+  "segout/masks/image003/segment_002.png": {
+    "backed_up": true,
+    "size": 3414
+  },
+  "segout/masks/image003/segment_008.png": {
+    "backed_up": true,
+    "size": 2530
+  },
+  "segout/masks/image003/segment_021.png": {
+    "backed_up": true,
+    "size": 2168
+  },
+  "segout/masks/image003/segment_013.png": {
+    "backed_up": true,
+    "size": 2776
+  },
+  "segout/masks/image003/segment_001.png": {
+    "backed_up": true,
+    "size": 2461
+  },
+  "segout/masks/image003/segment_012.png": {
+    "backed_up": true,
+    "size": 2450
+  },
+  "segout/masks/image003/segment_006.png": {
+    "backed_up": true,
+    "size": 2311
+  },
+  "segout/masks/image003/segment_015.png": {
+    "backed_up": true,
+    "size": 2423
+  },
+  "segout/masks/image003/segment_019.png": {
+    "backed_up": true,
+    "size": 2604
+  },
+  "segout/masks/image003/segment_004.png": {
+    "backed_up": true,
+    "size": 2514
+  },
+  "segout/masks/20251230_104248_258_scale_0.20_undistorted/segment_005.png": {
+    "backed_up": true,
+    "size": 7423
+  },
+  "segout/masks/20251230_104248_258_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7435
+  },
+  "segout/masks/20251230_104248_258_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7245
+  },
+  "segout/masks/20251230_104248_258_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7242
+  },
+  "segout/masks/20251230_104248_258_scale_0.20_undistorted/segment_006.png": {
+    "backed_up": true,
+    "size": 7230
+  },
+  "segout/masks/20251230_104248_258_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7551
+  },
+  "segout/masks/image018/segment_002.png": {
+    "backed_up": true,
+    "size": 928
+  },
+  "segout/masks/image018/segment_001.png": {
+    "backed_up": true,
+    "size": 1119
+  },
+  "segout/masks/20251230_104247_625_scale_0.20_undistorted/segment_005.png": {
+    "backed_up": true,
+    "size": 7399
+  },
+  "segout/masks/20251230_104247_625_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7365
+  },
+  "segout/masks/20251230_104247_625_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7010
+  },
+  "segout/masks/20251230_104247_625_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7060
+  },
+  "segout/masks/20251230_104247_625_scale_0.20_undistorted/segment_006.png": {
+    "backed_up": true,
+    "size": 7271
+  },
+  "segout/masks/20251230_104247_625_scale_0.20_undistorted/segment_004.png": {
+    "backed_up": true,
+    "size": 7499
+  },
+  "segout/masks/image000/segment_002.png": {
+    "backed_up": true,
+    "size": 631
+  },
+  "segout/masks/image000/segment_001.png": {
+    "backed_up": true,
+    "size": 681
+  },
+  "segout/masks/20251230_104308_358_scale_0.20_undistorted/segment_003.png": {
+    "backed_up": true,
+    "size": 7833
+  },
+  "segout/masks/20251230_104308_358_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7918
+  },
+  "segout/masks/20251230_104308_358_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7936
+  },
+  "segout/visualizations/image010_segmented.jpg": {
+    "backed_up": true,
+    "size": 19361
+  },
+  "segout/visualizations/image020_segmented.jpg": {
+    "backed_up": true,
+    "size": 42052
+  },
+  "segout/visualizations/image007_segmented.jpg": {
+    "backed_up": true,
+    "size": 23174
+  },
+  "segout/visualizations/image006_segmented.jpg": {
+    "backed_up": true,
+    "size": 45233
+  },
+  "segout/visualizations/20251230_104257_342_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 970995
+  },
+  "segout/visualizations/image019_segmented.jpg": {
+    "backed_up": true,
+    "size": 39140
+  },
+  "segout/visualizations/image024_segmented.jpg": {
+    "backed_up": true,
+    "size": 37968
+  },
+  "segout/visualizations/image000_segmented.jpg": {
+    "backed_up": true,
+    "size": 11689
+  },
+  "segout/visualizations/image008_segmented.jpg": {
+    "backed_up": true,
+    "size": 86641
+  },
+  "segout/visualizations/image004_segmented.jpg": {
+    "backed_up": true,
+    "size": 254612
+  },
+  "segout/visualizations/image021_segmented.jpg": {
+    "backed_up": true,
+    "size": 44346
+  },
+  "segout/visualizations/image028_segmented.jpg": {
+    "backed_up": true,
+    "size": 312464
+  },
+  "segout/visualizations/20251230_104249_344_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 976513
+  },
+  "segout/visualizations/20251230_104307_341_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 1014075
+  },
+  "segout/visualizations/image017_segmented.jpg": {
+    "backed_up": true,
+    "size": 23486
+  },
+  "segout/visualizations/20251230_104248_258_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 937090
+  },
+  "segout/visualizations/image001_segmented.jpg": {
+    "backed_up": true,
+    "size": 538703
+  },
+  "segout/visualizations/20251230_104308_358_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 1026378
+  },
+  "segout/visualizations/image014_segmented.jpg": {
+    "backed_up": true,
+    "size": 28185
+  },
+  "segout/visualizations/image018_segmented.jpg": {
+    "backed_up": true,
+    "size": 21244
+  },
+  "segout/visualizations/image012_segmented.jpg": {
+    "backed_up": true,
+    "size": 55873
+  },
+  "segout/visualizations/20251230_104247_148_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 949915
+  },
+  "segout/visualizations/image023_segmented.jpg": {
+    "backed_up": true,
+    "size": 31352
+  },
+  "segout/visualizations/image005_segmented.jpg": {
+    "backed_up": true,
+    "size": 30703
+  },
+  "segout/visualizations/20251230_104247_625_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 921232
+  },
+  "segout/visualizations/image003_segmented.jpg": {
+    "backed_up": true,
+    "size": 399055
+  },
+  "segout/visualizations/image016_segmented.jpg": {
+    "backed_up": true,
+    "size": 31797
+  },
+  "segout/visualizations/image027_segmented.jpg": {
+    "backed_up": true,
+    "size": 197999
+  },
+  "segout/visualizations/20251230_104307_833_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 987181
+  },
+  "segout/visualizations/20251230_104249_826_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 980968
+  },
+  "segout/visualizations/image025_segmented.jpg": {
+    "backed_up": true,
+    "size": 40612
+  },
+  "segout/visualizations/image026_segmented.jpg": {
+    "backed_up": true,
+    "size": 108994
+  },
+  "segout/visualizations/image013_segmented.jpg": {
+    "backed_up": true,
+    "size": 40527
+  },
+  "segout/visualizations/imag1_segmented.jpg": {
+    "backed_up": true,
+    "size": 125323
+  },
+  "segout/visualizations/image002_segmented.jpg": {
+    "backed_up": true,
+    "size": 37614
+  },
+  "segout/visualizations/image022_segmented.jpg": {
+    "backed_up": true,
+    "size": 31039
+  },
+  "segout/visualizations/20251230_104248_836_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 951864
+  },
+  "segout/visualizations/image011_segmented.jpg": {
+    "backed_up": true,
+    "size": 568705
+  },
+  "segout/visualizations/image015_segmented.jpg": {
+    "backed_up": true,
+    "size": 27405
+  },
+  "segout/visualizations/20251230_104256_858_scale_0.20_undistorted_segmented.jpg": {
+    "backed_up": true,
+    "size": 913523
+  },
+  "segout/masks_json1/image001_updated.json": {
+    "backed_up": true,
+    "size": 23957
+  },
+  "segout/masks_json1/image003_updated.json": {
+    "backed_up": true,
+    "size": 80286
+  },
+  "segout/masks_json1/20251230_104248_258_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 60441
+  },
+  "segout/masks_json1/image007_updated.json": {
+    "backed_up": true,
+    "size": 3289
+  },
+  "segout/masks_json1/20251230_104256_858_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41161
+  },
+  "segout/masks_json1/20251230_104248_836_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 62677
+  },
+  "segout/masks_json1/image016_updated.json": {
+    "backed_up": true,
+    "size": 10430
+  },
+  "segout/masks_json1/image018_updated.json": {
+    "backed_up": true,
+    "size": 3274
+  },
+  "segout/masks_json1/image015_updated.json": {
+    "backed_up": true,
+    "size": 1456
+  },
+  "segout/masks_json1/20251230_104247_148_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41155
+  },
+  "segout/masks_json1/20251230_104249_826_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41641
+  },
+  "segout/masks_json1/image024_updated.json": {
+    "backed_up": true,
+    "size": 5027
+  },
+  "segout/masks_json1/image017_updated.json": {
+    "backed_up": true,
+    "size": 3136
+  },
+  "segout/masks_json1/image008_updated.json": {
+    "backed_up": true,
+    "size": 19461
+  },
+  "segout/masks_json1/20251230_104257_342_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 71130
+  },
+  "segout/masks_json1/image002_updated.json": {
+    "backed_up": true,
+    "size": 6704
+  },
+  "segout/masks_json1/image005_updated.json": {
+    "backed_up": true,
+    "size": 3338
+  },
+  "segout/masks_json1/20251230_104249_344_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 41769
+  },
+  "segout/masks_json1/image025_updated.json": {
+    "backed_up": true,
+    "size": 3030
+  },
+  "segout/masks_json1/image012_updated.json": {
+    "backed_up": true,
+    "size": 10457
+  },
+  "segout/masks_json1/image006_updated.json": {
+    "backed_up": true,
+    "size": 8483
+  },
+  "segout/masks_json1/20251230_104247_625_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 59753
+  },
+  "segout/masks_json1/image010_updated.json": {
+    "backed_up": true,
+    "size": 3051
+  },
+  "segout/masks_json1/image021_updated.json": {
+    "backed_up": true,
+    "size": 8049
+  },
+  "segout/masks_json1/image013_updated.json": {
+    "backed_up": true,
+    "size": 2751
+  },
+  "segout/masks_json1/20251230_104307_833_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 32396
+  },
+  "segout/masks_json1/image011_updated.json": {
+    "backed_up": true,
+    "size": 52294
+  },
+  "segout/masks_json1/image000_updated.json": {
+    "backed_up": true,
+    "size": 2297
+  },
+  "segout/masks_json1/image026_updated.json": {
+    "backed_up": true,
+    "size": 12832
+  },
+  "segout/masks_json1/imag1_updated.json": {
+    "backed_up": true,
+    "size": 4369
+  },
+  "segout/masks_json1/image019_updated.json": {
+    "backed_up": true,
+    "size": 13969
+  },
+  "segout/masks_json1/image023_updated.json": {
+    "backed_up": true,
+    "size": 12776
+  },
+  "segout/masks_json1/20251230_104308_358_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 32405
+  },
+  "segout/masks_json1/image027_updated.json": {
+    "backed_up": true,
+    "size": 45341
+  },
+  "segout/masks_json1/image020_updated.json": {
+    "backed_up": true,
+    "size": 5505
+  },
+  "segout/masks_json1/image014_updated.json": {
+    "backed_up": true,
+    "size": 3954
+  },
+  "segout/masks_json1/image028_updated.json": {
+    "backed_up": true,
+    "size": 81582
+  },
+  "segout/masks_json1/image004_updated.json": {
+    "backed_up": true,
+    "size": 87249
+  },
+  "segout/masks_json1/image022_updated.json": {
+    "backed_up": true,
+    "size": 17165
+  },
+  "segout/masks_json1/20251230_104307_341_scale_0.20_undistorted_updated.json": {
+    "backed_up": true,
+    "size": 32425
+  },
+  "segout/masks/image010/segment_002.png": {
+    "backed_up": true,
+    "size": 985
+  },
+  "segout/masks/20251230_104249_826_scale_0.20_undistorted/segment_002.png": {
+    "backed_up": true,
+    "size": 7696
+  },
+  "segout/masks/image013/segment_002.png": {
+    "backed_up": true,
+    "size": 780
+  },
+  "segout/masks/20251230_104307_341_scale_0.20_undistorted/segment_001.png": {
+    "backed_up": true,
+    "size": 7946
+  },
+  "segout/masks/image015/segment_001.png": {
+    "backed_up": true,
+    "size": 880
+  }
+}

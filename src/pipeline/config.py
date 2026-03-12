@@ -90,7 +90,7 @@ class PipelineConfig:
                     user="user",
                     zip_dir="/data02/rere_zips",
                     process_dir="/data02/processing",
-                    final_dir="/data02/dataset/scenesnew",
+                    final_dir="/data02/dataset/lines",
                     priority=1
                 ),
             ]

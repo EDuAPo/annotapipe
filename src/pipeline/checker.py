@@ -95,10 +95,15 @@ class AnnotationChecker:
         
         for sample_path in sample_paths:
             if self.ssh.file_exists(sample_path):
-                cmd = f"python3 -c \"import json; print(len(json.load(open('{sample_path}'))))\""
+                # 使用更健壮的命令，处理各种JSON格式
+                cmd = f"python3 -c \"import json, sys; data = json.load(open('{sample_path}')); print(len(data) if hasattr(data, '__len__') and not isinstance(data, str) else 0)\" 2>/dev/null || echo 0"
                 status, out, _ = self.ssh.exec_command(cmd)
-                if status == 0 and out.strip().isdigit():
-                    return int(out.strip())
+                try:
+                    count = int(out.strip())
+                    if count > 0:
+                        return count
+                except ValueError:
+                    pass
         
         return 0
     

@@ -46,7 +46,11 @@ def main():
     parser.add_argument("--zip", required=True, help="ZIP 文件路径")
     parser.add_argument("--json", required=True, help="JSON 标注文件路径")
     parser.add_argument("--out", required=True, help="输出目录")
+<<<<<<< HEAD
     parser.add_argument("--output_name", default=None, help="输出目录名（可选，默认使用 ZIP 文件名）")
+=======
+    parser.add_argument("--stem", default=None, help="输出目录名（不带 processed_ 前缀）")
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
     parser.add_argument("--rename_json", default="False", help="是否重命名 JSON 为 annotations.json")
     args = parser.parse_args()
     
@@ -55,6 +59,7 @@ def main():
     output_root = Path(args.out)
     rename = args.rename_json.lower() == "true"
     
+<<<<<<< HEAD
     # 目标目录：优先使用指定的输出名称，否则使用 ZIP 文件名
     output_name = args.output_name if args.output_name else zip_path.stem
     final_dir = output_root / output_name
@@ -63,6 +68,42 @@ def main():
         # 创建最终目录（如果已存在则清理）
         if final_dir.exists():
             shutil.rmtree(final_dir)
+=======
+    # 目标目录：使用指定的 stem 或 ZIP 文件名（去掉 processed_ 前缀）
+    if args.stem:
+        dir_name = args.stem
+    else:
+        dir_name = zip_path.stem
+        if dir_name.startswith("processed_"):
+            dir_name = dir_name[len("processed_"):]
+    
+    final_dir = output_root / dir_name
+    temp_dir = output_root / f"temp_{dir_name}"
+    
+    # 清理临时目录
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # 解压 ZIP
+        print(f"解压: {zip_path.name}")
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            # 先测试 ZIP 文件完整性
+            bad_file = zf.testzip()
+            if bad_file:
+                raise zipfile.BadZipFile(f"ZIP 文件损坏，第一个损坏文件: {bad_file}")
+            zf.extractall(temp_dir)
+        
+        # 查找数据根目录
+        data_root = find_data_root(temp_dir)
+        if not data_root:
+            raise Exception("未找到数据根目录")
+        
+        print(f"数据根目录: {data_root}")
+        
+        # 创建最终目录
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         final_dir.mkdir(parents=True, exist_ok=True)
         
         # 复制 JSON 文件

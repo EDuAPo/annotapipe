@@ -1,3 +1,13 @@
+"""
+统计自动驾驶感知标注JSON文件的工具脚本。
+
+功能说明：
+- 支持分析3D拉框、2D矩形框、3D线段等多种标注类型。
+- 自动检测标注类型，统计各类标注的数量、类别分布、尺寸/长度等信息。
+- 支持将统计结果输出到控制台、JSON文件或CSV文件。
+- 适用于自动驾驶数据标注的质量检查与数据分析。
+- 支持输入单个JSON文件或包含JSON文件的目录。
+"""
 import json
 import argparse
 import os
@@ -108,6 +118,42 @@ def collect_stats(data: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
     return stats, ann_type
 
 
+def merge_stats(stats_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    合并多个统计数据
+    """
+    if not stats_list:
+        return {}
+    merged = {
+        'sample_count': 0,
+        'total_annotations': 0,
+        'box_count': 0,
+        '2d_box_count': 0,
+        'line_count': 0,
+        'total_line_points': 0,
+        'box_categories': defaultdict(lambda: {'count': 0, 'sizes': []}),
+        '2d_categories': defaultdict(lambda: {'count': 0}),
+        'line_categories': defaultdict(lambda: {'count': 0, 'lengths': [], 'point_counts': []}),
+    }
+    for stats in stats_list:
+        merged['sample_count'] += stats['sample_count']
+        merged['total_annotations'] += stats['total_annotations']
+        merged['box_count'] += stats['box_count']
+        merged['2d_box_count'] += stats['2d_box_count']
+        merged['line_count'] += stats['line_count']
+        merged['total_line_points'] += stats['total_line_points']
+        for cls, data in stats['box_categories'].items():
+            merged['box_categories'][cls]['count'] += data['count']
+            merged['box_categories'][cls]['sizes'].extend(data['sizes'])
+        for cls, data in stats['2d_categories'].items():
+            merged['2d_categories'][cls]['count'] += data['count']
+        for cls, data in stats['line_categories'].items():
+            merged['line_categories'][cls]['count'] += data['count']
+            merged['line_categories'][cls]['lengths'].extend(data['lengths'])
+            merged['line_categories'][cls]['point_counts'].extend(data['point_counts'])
+    return merged
+
+
 def compute_averages(stats: Dict[str, Any]):
     """
     计算平均值
@@ -123,12 +169,15 @@ def compute_averages(stats: Dict[str, Any]):
             data['avg_points'] = sum(data['point_counts']) / len(data['point_counts'])
 
 
-def print_stats(file_path: str, stats: Dict[str, Any], ann_type: str):
+def print_stats(path: str, stats: Dict[str, Any], ann_type: str):
     """
     打印统计结果到控制台
     """
     print("=== JSON标注统计报告 ===")
-    print(f"文件: {os.path.basename(file_path)}")
+    if os.path.isdir(path):
+        print(f"目录: {path}")
+    else:
+        print(f"文件: {os.path.basename(path)}")
     print(f"类型: {ann_type}")
     print(f"样本数量: {stats['sample_count']}")
     print(f"总标注数量: {stats['total_annotations']}")
@@ -204,28 +253,65 @@ def save_csv(stats: Dict[str, Any], output_path: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="统计自动驾驶感知标注JSON文件")
-    parser.add_argument('file_path', help='JSON文件路径')
+    parser = argparse.ArgumentParser(description="统计自动驾驶感知标注JSON文件或目录")
+    parser.add_argument('file_path', help='JSON文件路径或包含JSON文件的目录')
     parser.add_argument('--output', choices=['console', 'json', 'csv'], default='console', help='输出格式')
     parser.add_argument('--output_path', help='输出文件路径（用于json/csv）')
     args = parser.parse_args()
 
     if not os.path.exists(args.file_path):
-        print(f"文件不存在: {args.file_path}")
+        print(f"路径不存在: {args.file_path}")
         sys.exit(1)
 
-    data = load_json(args.file_path)
-    stats, ann_type = collect_stats(data)
-    compute_averages(stats)
+    if os.path.isdir(args.file_path):
+        # 处理目录
+        json_files = []
+        for root, dirs, files in os.walk(args.file_path):
+            for f in files:
+                if f.endswith('.json'):
+                    json_files.append(os.path.join(root, f))
+        if not json_files:
+            print(f"目录中未找到JSON文件: {args.file_path}")
+            sys.exit(1)
+        stats_list = []
+        ann_types = []
+        for json_file in json_files:
+            data = load_json(json_file)
+            stats, ann_type = collect_stats(data)
+            stats_list.append(stats)
+            ann_types.append(ann_type)
+        stats = merge_stats(stats_list)
+        # 取第一个ann_type作为代表，或检测整体
+        ann_type = ann_types[0] if ann_types else "未知格式"
+        compute_averages(stats)
+        path = args.file_path
+    else:
+        # 处理单个文件
+        data = load_json(args.file_path)
+        stats, ann_type = collect_stats(data)
+        compute_averages(stats)
+        path = args.file_path
 
     if args.output == 'console':
-        print_stats(args.file_path, stats, ann_type)
+        print_stats(path, stats, ann_type)
     elif args.output == 'json':
-        output_path = args.output_path or args.file_path.replace('.json', '_stats.json')
+        if args.output_path:
+            output_path = args.output_path
+        else:
+            if os.path.isdir(path):
+                output_path = os.path.join(path, 'stats.json')
+            else:
+                output_path = path.replace('.json', '_stats.json')
         save_json(stats, output_path)
         print(f"统计结果已保存到: {output_path}")
     elif args.output == 'csv':
-        output_path = args.output_path or args.file_path.replace('.json', '_stats.csv')
+        if args.output_path:
+            output_path = args.output_path
+        else:
+            if os.path.isdir(path):
+                output_path = os.path.join(path, 'stats.csv')
+            else:
+                output_path = path.replace('.json', '_stats.csv')
         save_csv(stats, output_path)
         print(f"统计结果已保存到: {output_path}")
 

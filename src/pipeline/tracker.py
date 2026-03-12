@@ -75,6 +75,7 @@ class TrackingRecord:
     annotation_status: str = "已完成"
     uploaded: bool = False
     attributes: List[str] = None
+    final_dir: str = None
     
     def __post_init__(self):
         if self.attributes is None:
@@ -265,11 +266,20 @@ class FeishuTracker(BaseTracker):
                 for item in items:
                     record_id = item.get('record_id')
                     fields = item.get('fields', {})
-                    name = _extract_text_value(fields.get('数据包名称', ''))
+                    
+                    # 将字段ID转换回字段名，以便后续逻辑使用
+                    field_mapping = self.config.get('field_mapping', {})
+                    id_to_name = {v: k for k, v in field_mapping.items()}
+                    converted_fields = {}
+                    for field_id, field_value in fields.items():
+                        field_name = id_to_name.get(field_id, field_id)  # 如果找不到映射，保持原样
+                        converted_fields[field_name] = field_value
+                    
+                    name = _extract_text_value(converted_fields.get('数据包名称', ''))
                     if name and record_id:
                         all_records[name] = {
                             'record_id': record_id,
-                            'fields': fields
+                            'fields': converted_fields
                         }
                 
                 page_count += 1
@@ -323,6 +333,7 @@ class FeishuTracker(BaseTracker):
         table_id = self.config.get('table_id', '')
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_create"
         
+        # batch_create API 使用字段名，不需要转换为字段ID
         payload = {"records": [{"fields": f} for f in records_fields]}
         
         # 尝试创建，如果token失效则刷新后重试
@@ -367,9 +378,10 @@ class FeishuTracker(BaseTracker):
         table_id = self.config.get('table_id', '')
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_update"
         
-        # 直接使用字段名称
+        # batch_update API 也使用字段名，不需要转换为字段ID
         payload = {"records": records}
         logger.debug(f"📝 更新请求: record_id={records[0]['record_id'] if records else 'N/A'}, fields={records[0]['fields'] if records else {}}")
+<<<<<<< HEAD
         
         # 尝试更新，如果token失效则刷新后重试
         for attempt in range(2):
@@ -403,6 +415,27 @@ class FeishuTracker(BaseTracker):
                 logger.error(f"批量更新异常: {e}")
                 return 0
         
+=======
+        try:
+            r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
+            data = r.json()
+            logger.debug(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}")
+            if data.get('code') == 0:
+                updated_records = data.get('data', {}).get('records', [])
+                updated_count = len(updated_records)
+                logger.debug(f"📝 批量更新成功: 更新了 {updated_count} 条记录")
+                for rec in updated_records:
+                    rec_id = rec.get('record_id', 'N/A')
+                    name = rec.get('fields', {}).get('数据包名称', 'N/A')
+                    logger.debug(f"  ✓ 已更新: {name} (record_id={rec_id})")
+                return updated_count
+            else:
+                logger.error(f"批量更新失败: code={data.get('code')}, msg={data.get('msg')}")
+                if records:
+                    logger.error(f"更新记录示例: {records[0]}")
+        except Exception as e:
+            logger.error(f"批量更新异常: {e}")
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         return 0
     
     def _get_path_field_from_pipeline(self, pipeline_config_path: str) -> str:
@@ -456,13 +489,22 @@ class FeishuTracker(BaseTracker):
             logger.warning("飞书追踪器不可用，跳过")
             return {}
         
+        # 检查token是否有效
+        if not self._get_token():
+            logger.warning("飞书Token获取失败，回退到本地追踪")
+            return {}
+        
         # 强制重新加载记录，确保缓存是最新的
         self._load_all_records(force_reload=True)
         
         attributes = self.detect_attributes(json_dir) if json_dir else []
         
+<<<<<<< HEAD
         # 从 pipeline.yaml 动态读取 final_dir 并转换为飞书列名
         path_field = self._get_path_field_from_pipeline(pipeline_config_path)
+=======
+        # field_mapping用于路径列匹配
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         field_mapping = self.config.get('field_mapping', {})
         
         to_create = []
@@ -508,15 +550,19 @@ class FeishuTracker(BaseTracker):
                     if attr_field in field_mapping:
                         fields[attr_field] = True
                 
-                # 路径列：保留已有的 True 值 + 新增当前路径
+                # 路径列：累加模式，保留已有的路径，新增当前路径
+                # 同一个数据包可能同时存在于多个 final_dir
+                # 保留已有的上传路径（不清除）
                 for field_name in field_mapping.keys():
                     if field_name.startswith('上传'):
                         if existing_fields.get(field_name):
                             fields[field_name] = True
                 
-                # 新增当前路径
-                if rec.uploaded and path_field in field_mapping:
-                    fields[path_field] = True
+                # 新增当前路径为True
+                if rec.uploaded and rec.final_dir:
+                    current_path_field = f'上传{rec.final_dir.lstrip("/")}'
+                    if current_path_field in field_mapping:
+                        fields[current_path_field] = True
                 
                 to_update.append({"record_id": existing['record_id'], "fields": fields})
                 updated_names.append(rec.name)
@@ -533,8 +579,12 @@ class FeishuTracker(BaseTracker):
                     if attr_field in field_mapping:
                         fields[attr_field] = True
                 
-                if rec.uploaded and path_field in field_mapping:
-                    fields[path_field] = True
+                # 设置上传路径（根据record的final_dir）
+                if rec.uploaded and rec.final_dir:
+                    current_path_field = f'上传{rec.final_dir.lstrip("/")}'
+                    if current_path_field in field_mapping:
+                        # 对于新记录，我们可以安全地设置字段，因为表格定义中包含了所有字段
+                        fields[current_path_field] = True
                 
                 to_create.append(fields)
                 created_names.append(rec.name)
@@ -584,7 +634,16 @@ class Tracker:
     def track(self, records: List[TrackingRecord], json_dir: str = None, pipeline_config_path: str = "configs/pipeline.yaml") -> Dict[str, Any]:
         """追踪记录"""
         if self._use_feishu:
+<<<<<<< HEAD
             return self.feishu.track(records, json_dir, pipeline_config_path)
+=======
+            result = self.feishu.track(records, json_dir)
+            if result:  # 如果飞书追踪成功，返回结果
+                return result
+            else:  # 飞书追踪失败，回退到本地
+                logger.info("飞书追踪失败，回退到本地追踪")
+                return self.local.track(records)
+>>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         else:
             return self.local.track(records)
     
@@ -599,24 +658,14 @@ def create_tracking_records(result, keyframe_counts: Dict[str, int]) -> List[Tra
     """从 PipelineResult 创建追踪记录"""
     records = []
     
-    # 收集所有处理过的数据名称
-    all_names = set()
-    all_names.update(result.downloaded)
-    all_names.update(result.uploaded)
-    all_names.update(result.processed)
-    all_names.update(result.check_passed)
-    all_names.update(result.check_failed)
-    all_names.update(result.moved_to_final)
-    all_names.update(result.skipped_server_exists)
+    # 只处理成功的数据包（检查通过或已在服务器上）
+    successful_names = set()
+    successful_names.update(result.check_passed)
+    successful_names.update(result.skipped_server_exists)
     
-    for name in sorted(all_names):
+    for name in sorted(successful_names):
         # 确定标注状态
-        if name in result.check_passed or name in result.skipped_server_exists:
-            status = "已完成"
-        elif name in result.check_failed:
-            status = "检查不通过"
-        else:
-            status = "已完成"
+        status = "已完成"  # 这些都是成功的
         
         # 是否已上传
         uploaded = name in result.moved_to_final or name in result.skipped_server_exists
@@ -626,6 +675,7 @@ def create_tracking_records(result, keyframe_counts: Dict[str, int]) -> List[Tra
             keyframe_count=keyframe_counts.get(name, 0),
             annotation_status=status,
             uploaded=uploaded,
+            final_dir=result.final_dirs.get(name),
         ))
     
     return records
