@@ -62,6 +62,15 @@ class DataWeaveConfig:
 
 
 @dataclass
+class BatchMetadata:
+    """批次元数据（用于飞书同步时的场景、天气等信息）"""
+    scene: str = ""
+    weather: str = ""
+    lighting: str = ""
+    area: str = ""
+
+
+@dataclass
 class PipelineConfig:
     """流水线配置"""
     servers: List[ServerConfig] = field(default_factory=list)
@@ -80,6 +89,9 @@ class PipelineConfig:
     max_workers: int = 3
     download_workers: int = 5
     batch_size: int = 20
+
+    # 批次元数据
+    batch_metadata: BatchMetadata = field(default_factory=BatchMetadata)
     
     def __post_init__(self):
         if not self.servers:

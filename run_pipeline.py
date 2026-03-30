@@ -120,9 +120,6 @@ def main():
         json_dir=str(json_dir),
         local_zip_dir=args.zip_dir,
         config=config,
-        preset=args.preset,
-        enabled_steps=args.enable_steps,
-        disabled_steps=args.disable_steps
     )
     
     result = runner.run(mode=args.mode, workers=args.workers)
