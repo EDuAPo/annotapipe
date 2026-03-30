@@ -21,11 +21,8 @@ from .ssh_client import SSHClient
 from .downloader import Downloader
 from .processor import RemoteProcessor
 from .server_logger import ServerLogger
-from .tracker import Tracker, TrackingRecord
+from .tracker import Tracker, TrackingRecord, extract_time_key
 from .state import StateManager, ProcessStatus
-from .nas_backup import NASBackup
-from .utils import normalize_zip_name
-from .scheduler import PipelineScheduler, PipelineStep
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +48,9 @@ class PipelineResult:
     check_passed: List[str] = field(default_factory=list)
     check_failed: List[str] = field(default_factory=list)
     moved_to_final: List[str] = field(default_factory=list)
-<<<<<<< HEAD
-    backed_up: List[str] = field(default_factory=list)  # NAS备份成功的数据包
-    backup_failed: List[str] = field(default_factory=list)  # NAS备份失败的数据包
-=======
     final_dirs: Dict[str, str] = field(default_factory=dict)  # 数据包名 -> final_dir
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
     keyframe_counts: Dict[str, int] = field(default_factory=dict)
+    annotation_stats: Dict[str, dict] = field(default_factory=dict)  # 数据包名 -> 标注统计
     errors: Dict[str, List[tuple]] = field(default_factory=dict)
     
     def log_error(self, stem: str, step: str, msg: str):
@@ -158,8 +151,7 @@ class SSHConnectionPool:
 class PipelineRunner:
     """流水线运行器"""
     
-    def __init__(self, json_dir: str, local_zip_dir: str = None, config: PipelineConfig = None,
-                 preset: str = None, enabled_steps: List[str] = None, disabled_steps: List[str] = None):
+    def __init__(self, json_dir: str, local_zip_dir: str = None, config: PipelineConfig = None):
         self.config = config or get_config()
         self.json_dir = Path(json_dir)
         
@@ -177,33 +169,10 @@ class PipelineRunner:
         self._deploy_lock = threading.Lock()
         self._scripts_deployed = False
         self.server_logger: Optional[ServerLogger] = None
-        self.nas_backup: Optional[NASBackup] = None
         
         # 状态管理器（断点续传支持）
         self.state_manager = StateManager(base_dir)
         
-<<<<<<< HEAD
-        # 调度器（步骤控制）
-        scheduler_config = {}
-        if hasattr(self.config, '__dict__'):
-            # 从配置中提取调度器相关配置
-            config_dict = self.config.__dict__ if hasattr(self.config, '__dict__') else {}
-            # 尝试从 YAML 配置中读取
-            import yaml
-            from pathlib import Path as P
-            pipeline_yaml = P("configs/pipeline.yaml")
-            if pipeline_yaml.exists():
-                with open(pipeline_yaml, 'r') as f:
-                    yaml_config = yaml.safe_load(f) or {}
-                    scheduler_config = yaml_config
-        
-        self.scheduler = PipelineScheduler(
-            config=scheduler_config,
-            preset=preset,
-            enabled_steps=enabled_steps,
-            disabled_steps=disabled_steps
-        )
-=======
         # 加载飞书配置用于属性检测
         self._feishu_config = self._load_feishu_config()
     
@@ -234,7 +203,6 @@ class PipelineRunner:
         if self.config.servers:
             return self.config.servers[0].final_dir
         return "/data02/dataset/scenesnew"  # 默认值
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
     
     def run(self, mode: str = "optimized", workers: int = None):
         """
@@ -249,10 +217,6 @@ class PipelineRunner:
         print("╚" + "═" * 50 + "╝")
         print(f"  📁 JSON目录: {self.json_dir}")
         
-        # 显示执行计划
-        self.scheduler.print_execution_plan()
-        print()
-        
         json_files = list(self.json_dir.glob("*.json"))
         if not json_files:
             print("  ⚠ 未找到 JSON 文件")
@@ -260,95 +224,11 @@ class PipelineRunner:
         
         print(f"  📋 共 {len(json_files)} 个文件")
         
-        # 初始化NAS备份（使用上下文管理器）
-        with NASBackup() as nas_backup:
-            self.nas_backup = nas_backup
+        with SSHClient() as ssh:
+            if not ssh.is_connected:
+                print("  ✗ 无法连接服务器")
+                return self.result
             
-<<<<<<< HEAD
-            with SSHClient() as ssh:
-                if not ssh.is_connected:
-                    print("  ✗ 无法连接服务器")
-                    return self.result
-                
-                print(f"  🔗 已连接服务器: {ssh.server.ip}")
-                
-                processor = RemoteProcessor(ssh, self.config)
-                processor.deploy_scripts()
-                
-                # 初始化服务器日志
-                self.server_logger = ServerLogger(ssh)
-                print(f"  📋 服务器日志: {self.server_logger.log_file}")
-                
-                # 确保目录存在
-                ssh.mkdir_p(ssh.server.zip_dir)
-                ssh.mkdir_p(ssh.server.process_dir)
-                
-                # 注意：不再自动清理临时文件，以支持断点续传
-                # 如需清理，请手动调用 uploader.cleanup_incomplete(force=True)
-                
-                # 获取服务器状态
-                state = processor.get_server_state()
-                print(f"  📊 服务器: {len(state['zip_files'])} ZIPs / {len(state['processed_dirs'])} 已完成")
-                
-                # 统计本地已下载的文件（只统计数量，不验证完整性）
-                local_zip_files = list(self.local_zip_dir.glob("*.zip"))
-                print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
-                
-                # 过滤需要处理的文件，跳过的文件立即更新飞书
-                files_to_process = []
-                tracker = Tracker()
-                for json_file in json_files:
-                    stem = json_file.stem
-                    if stem in state['processed_dirs']:
-                        # 尝试获取关键帧数量，如果失败则重新处理
-                        logger.info(f"[{stem}] 检查final_dir中的数据完整性...")
-                        kf = processor.get_keyframe_count(f"{ssh.server.final_dir}/{stem}")
-                        if kf > 0:
-                            # 服务器上已完成且数据完整的文件，记录为跳过
-                            logger.info(f"[{stem}] ✓ 已在final_dir中 (关键帧: {kf})，跳过所有步骤")
-                            self.result.skipped_server_exists.append(stem)
-                            self.result.check_passed.append(stem)
-                            self.result.keyframe_counts[stem] = kf
-                            # 立即更新飞书
-                            logger.info(f"[{stem}] 更新飞书表格...")
-                            self._track_single_to_feishu(tracker, stem, silent=True)
-                            logger.info(f"[{stem}] ✓ 飞书已更新")
-                        else:
-                            # 数据不完整，需要重新处理
-                            logger.warning(f"[{stem}] ✗ 在final_dir但数据不完整，将重新处理")
-                            files_to_process.append((json_file, stem))
-                    else:
-                        files_to_process.append((json_file, stem))
-                
-                skipped = len(json_files) - len(files_to_process)
-                if skipped > 0:
-                    print(f"  ⏭ 跳过(服务器已完成): {skipped} 个")
-                
-                if not files_to_process:
-                    print("  ✓ 所有文件都已处理完成")
-                    self._print_summary()
-                    return self.result
-                
-                # 计算实际需要下载的数量
-                local_stems = set(f.stem for f in local_zip_files)
-                need_download = 0
-                for json_file, stem in files_to_process:
-                    zip_name = f"{stem}.zip"
-                    if zip_name not in state['zip_files'] and stem not in local_stems:
-                        need_download += 1
-                
-                print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
-                if mode != "streaming":
-                    print(f"  🧵 并发数: {workers}")
-                print()
-                
-                if mode == "optimized":
-                    self._run_optimized(ssh, processor, files_to_process, state, workers)
-                elif mode == "parallel":
-                    self._run_parallel(processor, files_to_process, state, workers)
-                else:
-                    self._run_streaming(ssh, processor, files_to_process, state)
-=======
             print(f"  🔗 已连接服务器: {ssh.server.ip}")
             
             processor = RemoteProcessor(ssh, self.config)
@@ -372,58 +252,106 @@ class PipelineRunner:
             # 统计本地已下载的文件（只统计数量，不验证完整性）
             local_zip_files = list(self.local_zip_dir.glob("*.zip"))
             print(f"  💾 本地ZIP: {len(local_zip_files)} 个")
-            
-            # 过滤需要处理的文件
-            files_to_process = []
+
+            # ========================================================
+            # 增量分层过滤：飞书 → 服务器 final_dir → 服务器 ZIP → 本地
+            # ========================================================
             tracker = Tracker()
+
+            # 第一层：查询飞书已完成的记录
+            feishu_completed = tracker.get_completed_names()
+            if feishu_completed:
+                logger.debug(f"📋 飞书已完成: {len(feishu_completed)} 条")
+
+            skipped_complete = []   # 飞书已完成 + 服务器已存在 → 完全跳过
+            needs_feishu_sync = []  # 服务器已存在但飞书未记录 → 补同步
+            files_to_process = []   # 需要处理的文件
+
             for json_file in json_files:
                 stem = json_file.stem
-                files_to_process.append((json_file, stem))  # 处理所有JSON文件
-            
-            # 对于路径正确的跳过文件，立即同步飞书
-            # for stem in skipped_stems:
-            #     self._track_single_to_feishu(tracker, stem)
-            
-            skipped = len(json_files) - len(files_to_process)
-            if skipped > 0:
-                print(f"  ⏭ 跳过(服务器已完成): {skipped} 个")
-            
-            if not files_to_process:
-                print("  ✓ 所有文件都已处理完成")
-                self._print_summary()
-                # 注意：跳过的文件已在上面通过 _track_single_to_feishu 同步
-                return self.result
-            
-            # 计算实际需要下载的数量
-            local_stems = set(f.stem for f in local_zip_files)
-            need_download = 0
-            for json_file, stem in files_to_process:
-                # 使用规范化的stem构造ZIP文件名
                 normalized_stem = normalize_stem(stem)
-                zip_name = f"{normalized_stem}.zip"
-                local_zip = self.local_zip_dir / zip_name
-                # 检查是否需要下载（服务器没有 且 本地没有）
-                if zip_name not in state['zip_files'] and not (local_zip.exists() and local_zip.stat().st_size > 0):
-                    need_download += 1
-            
-            print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
-            if mode != "streaming":
-                print(f"  🧵 并发数: {workers}")
-            print()
-            
-            if mode == "optimized":
-                self._run_optimized(ssh, processor, files_to_process, state, workers)
-            elif mode == "parallel":
-                self._run_parallel(processor, files_to_process, state, workers)
+
+                # 检查服务器 final_dir 是否已有数据
+                server_has_final = stem in state['processed_dirs'] or normalized_stem in state['processed_dirs']
+
+                # 检查飞书是否已标记完成（精确匹配或模糊匹配）
+                feishu_done = False
+                if feishu_completed:
+                    time_key = extract_time_key(stem)
+                    for completed_name in feishu_completed:
+                        if stem == completed_name or time_key in completed_name or completed_name in stem:
+                            feishu_done = True
+                            break
+
+                if feishu_done and server_has_final:
+                    # 飞书已完成 + 服务器已存在 → 完全跳过
+                    skipped_complete.append(stem)
+                    self.result.skipped_server_exists.append(stem)
+                elif server_has_final and not feishu_done:
+                    # 服务器已存在但飞书未记录 → 需要补同步
+                    needs_feishu_sync.append((json_file, stem))
+                    self.result.skipped_server_exists.append(stem)
+                else:
+                    # 需要处理
+                    files_to_process.append((json_file, stem))
+
+            # 打印分层过滤结果
+            if skipped_complete:
+                print(f"  ⏭ 跳过(飞书+服务器已完成): {len(skipped_complete)} 个")
+            if needs_feishu_sync:
+                print(f"  📤 需补同步飞书: {len(needs_feishu_sync)} 个")
+
+            # 补同步：服务器已有但飞书未记录的数据包
+            if needs_feishu_sync:
+                for json_file, stem in needs_feishu_sync:
+                    # 获取关键帧数（从服务器 final_dir 读取）
+                    final_path = state.get('processed_dirs_with_path', {}).get(stem, '')
+                    if final_path:
+                        data_dir = f"{final_path}/{stem}"
+                        kf = processor.get_keyframe_count(data_dir)
+                        self.result.keyframe_counts[stem] = kf
+                        # 获取标注统计
+                        _, _, _, ann_stats = processor.check_annotations(data_dir, stem)
+                        if ann_stats:
+                            self.result.annotation_stats[stem] = ann_stats
+                    self.result.check_passed.append(stem)
+                    self.result.moved_to_final.append(stem)
+                    self.result.final_dirs[stem] = final_path
+
+            if not files_to_process:
+                if needs_feishu_sync or skipped_complete:
+                    print(f"  ✓ 所有文件已处理完成")
+                else:
+                    print("  ✓ 所有文件都已处理完成")
             else:
-                self._run_streaming(ssh, processor, files_to_process, state)
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
+                # 计算实际需要下载的数量
+                need_download = 0
+                for json_file, stem in files_to_process:
+                    # 使用规范化的stem构造ZIP文件名
+                    normalized_stem = normalize_stem(stem)
+                    zip_name = f"{normalized_stem}.zip"
+                    local_zip = self.local_zip_dir / zip_name
+                    # 检查是否需要下载（服务器没有 且 本地没有）
+                    if zip_name not in state['zip_files'] and not (local_zip.exists() and local_zip.stat().st_size > 0):
+                        need_download += 1
+
+                print(f"  📦 待处理: {len(files_to_process)} 个 (需下载: {need_download})")
+                if mode != "streaming":
+                    print(f"  🧵 并发数: {workers}")
+                print()
+
+                if mode == "optimized":
+                    self._run_optimized(ssh, processor, files_to_process, state, workers)
+                elif mode == "parallel":
+                    self._run_parallel(processor, files_to_process, state, workers)
+                else:
+                    self._run_streaming(ssh, processor, files_to_process, state)
         
         self._print_summary()
-        
-        # 注意：飞书同步已在 _track_single_to_feishu 中逐个完成
-        # 不再调用 _track_to_feishu 避免重复同步
-        
+
+        # 同步到飞书
+        self._track_to_feishu()
+
         return self.result
     
     def _run_optimized(self, ssh: SSHClient, processor: RemoteProcessor,
@@ -439,13 +367,8 @@ class PipelineRunner:
         skipped_local = 0
         skipped_server = 0
         for json_file, stem in files:
-<<<<<<< HEAD
-            # 规范化文件名用于查找ZIP
-            normalized_stem = normalize_zip_name(stem)
-=======
             # 使用规范化的stem构造ZIP文件名
             normalized_stem = normalize_stem(stem)
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
             zip_name = f"{normalized_stem}.zip"
             local_zip = self.local_zip_dir / zip_name
             
@@ -593,16 +516,10 @@ class PipelineRunner:
                 success = self._process_single(ssh, processor, json_file, stem, state, upload_idx, need_upload_count)
             else:
                 success = self._process_single(ssh, processor, json_file, stem, state, 0, 0)
-            # 只在成功时同步飞书
-            if success:
-                self._track_single_to_feishu(tracker, stem, silent=True)
             progress.update(success=success, name=stem)
-<<<<<<< HEAD
-=======
             
             # 每完成一个数据包立即同步飞书（无论成功还是失败）
             # self._track_single_to_feishu(tracker, stem)
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         
         progress.summary()
     
@@ -611,7 +528,6 @@ class PipelineRunner:
         """全并行模式：使用连接池复用 SSH 连接"""
         progress = ProgressTracker(len(files), "并行处理")
         pool = SSHConnectionPool(size=workers)
-        tracker = Tracker()
         
         try:
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -627,9 +543,6 @@ class PipelineRunner:
                     stem = futures[future]
                     try:
                         success = future.result()
-                        # 只在成功时同步飞书
-                        if success:
-                            self._track_single_to_feishu(tracker, stem, silent=True)
                         progress.update(success=success, name=stem)
                     except Exception as e:
                         logger.error(f"并行处理异常 {stem}: {e}")
@@ -651,19 +564,12 @@ class PipelineRunner:
         need_upload_list = []
         
         for json_file, stem in files:
-<<<<<<< HEAD
-            # 规范化文件名用于查找ZIP
-            normalized_stem = normalize_zip_name(stem)
-            zip_name = f"{normalized_stem}.zip"
-            if zip_name not in state['zip_files'] and stem not in local_stems:
-=======
             # 使用规范化的stem构造ZIP文件名
             normalized_stem = normalize_stem(stem)
             zip_name = f"{normalized_stem}.zip"
             local_zip = self.local_zip_dir / zip_name
             # 检查是否需要下载（服务器没有 且 本地没有）
             if zip_name not in state['zip_files'] and not (local_zip.exists() and local_zip.stat().st_size > 0):
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
                 need_download_list.append(stem)
             # 检查是否需要上传（服务器没有 且 本地有）
             if zip_name not in state['zip_files'] and (local_zip.exists() and local_zip.stat().st_size > 0):
@@ -696,17 +602,11 @@ class PipelineRunner:
                 total_count = 0
             
             success = self._process_single(ssh, processor, json_file, stem, state, current_idx, total_count)
-            # 只在成功时同步飞书
-            if success:
-                self._track_single_to_feishu(tracker, stem, silent=True)
             progress.update(success=success, name=stem)
-<<<<<<< HEAD
-=======
             
             # 只在成功时同步飞书，避免失败数据包的关键帧数被设置为0
             if success:
                 self._track_single_to_feishu(tracker, stem)
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         
         progress.summary()
     
@@ -714,12 +614,6 @@ class PipelineRunner:
                         json_file: Path, stem: str, state: Dict,
                         current_idx: int = 0, total_count: int = 0) -> bool:
         """处理单个文件（使用共享SSH连接）"""
-<<<<<<< HEAD
-        # 使用原始文件名查找本地ZIP（下载器会保存为原始文件名）
-        zip_name = f"{stem}.zip"
-        local_zip = self.local_zip_dir / zip_name
-        server = ssh.server
-=======
         # 使用规范化的stem构造ZIP文件名
         normalized_stem = normalize_stem(stem)
         zip_name = f"{normalized_stem}.zip"
@@ -728,29 +622,11 @@ class PipelineRunner:
         # 使用实际的ZIP文件名（可能带 processed_ 前缀）
         actual_zip_name = state.get('zip_actual_names', {}).get(zip_name, zip_name)
         remote_zip = f"{server.zip_dir}/{actual_zip_name}"
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         
-        # 检查服务器是否已有 ZIP 文件（可能带有 processed_ 前缀）
-        server_has_zip = zip_name in state['zip_files']
-        actual_zip_name = state.get('zip_file_map', {}).get(zip_name, zip_name)
-        remote_zip = f"{server.zip_dir}/{actual_zip_name}"
-        
-        # 检查是否可以从中间状态恢复
-        skip_download = self.state_manager.can_skip_download(stem)
-        skip_upload = self.state_manager.can_skip_upload(stem)
-        
-        # 检查 process_dir 中是否已有解压的数据
-        in_processing = stem in state.get('processing_dirs', set())
-        
-        # 检查本地文件是否存在（不验证完整性，避免卡顿）
-        local_exists = local_zip.exists() and local_zip.stat().st_size > 0
+        # 进度前缀
+        progress_prefix = f"[{current_idx}/{total_count}] " if total_count > 0 else ""
         
         try:
-<<<<<<< HEAD
-            # 步骤1: 下载ZIP（如果需要且调度器启用）
-            if self.scheduler.should_run(PipelineStep.DOWNLOAD) and not skip_download and not server_has_zip and not local_exists:
-                logger.info(f"[{stem}] ⬇ 下载ZIP...")
-=======
             # 检查是否可以从中间状态恢复
             skip_download = self.state_manager.can_skip_download(stem)
             skip_upload = self.state_manager.can_skip_upload(stem)
@@ -764,117 +640,58 @@ class PipelineRunner:
             # 下载 ZIP 文件（如果需要）
             if not skip_download and zip_name not in state['zip_files'] and not local_exists:
                 # 创建下载进度回调
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
                 download_start = [time.time()]
                 last_print = [0]
                 
                 def download_progress(downloaded, total):
                     now = time.time()
-                    if now - last_print[0] < 0.3:
+                    if now - last_print[0] < 0.3:  # 限制刷新频率
                         return
                     last_print[0] = now
                     elapsed = now - download_start[0]
                     speed = downloaded / elapsed / 1024 / 1024 if elapsed > 0 else 0
                     percent = downloaded / total * 100 if total > 0 else 0
-                    sys.stdout.write(f'\r\033[K  ⬇ 下载 {stem[:20]}: {downloaded/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
+                    sys.stdout.write(f'\r\033[K  {progress_prefix}⬇ 下载 {stem[:20]}: {downloaded/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
                     sys.stdout.flush()
                 
                 if not self.downloader.download_file(zip_name, local_zip, progress_callback=download_progress):
-                    print()
-                    logger.error(f"[{stem}] 下载失败")
+                    print()  # 换行
                     self.result.log_error(stem, "下载", "下载失败")
                     self.result.download_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, "下载失败")
                     return False
-                print()
+                print()  # 换行
                 self.result.downloaded.append(stem)
                 self.state_manager.update(stem, ProcessStatus.DOWNLOADED)
-            else:
-                if server_has_zip:
-                    logger.info(f"[{stem}] ⏭ 跳过下载 (服务器已有)")
-                elif local_exists:
-                    logger.info(f"[{stem}] ⏭ 跳过下载 (本地已有)")
-                elif skip_download:
-                    logger.info(f"[{stem}] ⏭ 跳过下载 (断点续传)")
             
-            # 步骤2: 上传ZIP到服务器（如果需要且调度器启用）
-            if self.scheduler.should_run(PipelineStep.UPLOAD) and not skip_upload and not server_has_zip and local_zip.exists():
-                logger.info(f"[{stem}] ⬆ 上传ZIP...")
+            # 上传
+            if not skip_upload and zip_name not in state['zip_files'] and local_zip.exists():
+                # 创建上传进度回调
+                file_size = local_zip.stat().st_size
                 upload_start = [time.time()]
                 last_print = [0]
                 
                 def upload_progress(transferred, total):
                     now = time.time()
-                    if now - last_print[0] < 0.3:
+                    if now - last_print[0] < 0.3:  # 限制刷新频率
                         return
                     last_print[0] = now
                     elapsed = now - upload_start[0]
                     speed = transferred / elapsed / 1024 / 1024 if elapsed > 0 else 0
                     percent = transferred / total * 100 if total > 0 else 0
-                    sys.stdout.write(f'\r\033[K  ⬆ 上传 {stem[:20]}: {transferred/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
+                    sys.stdout.write(f'\r\033[K  {progress_prefix}⬆ 上传 {stem[:20]}: {transferred/1024/1024:.1f}/{total/1024/1024:.1f}MB ({percent:.0f}%) {speed:.1f}MB/s')
                     sys.stdout.flush()
                 
                 if not ssh.upload_file(str(local_zip), remote_zip, progress_callback=upload_progress):
-                    print()
-                    logger.error(f"[{stem}] 上传失败")
+                    print()  # 换行
                     self.result.log_error(stem, "上传", "上传失败")
                     self.result.check_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, "上传失败")
                     return False
-                print()
+                print()  # 换行
                 self.result.uploaded.append(stem)
                 self.state_manager.update(stem, ProcessStatus.UPLOADED)
-            else:
-                if server_has_zip:
-                    logger.info(f"[{stem}] ⏭ 跳过上传 (服务器已有)")
-                elif skip_upload:
-                    logger.info(f"[{stem}] ⏭ 跳过上传 (断点续传)")
             
-            # 步骤3: 解压ZIP并上传JSON（如果调度器启用）
-            if not self.scheduler.should_run(PipelineStep.EXTRACT):
-                logger.info(f"[{stem}] ⏭ 跳过解压 (调度器禁用)")
-                return True
-            
-            data_dir = f"{server.process_dir}/{stem}"
-            need_extract = True
-            
-            if in_processing:
-                # 目录已存在，验证数据完整性
-                logger.info(f"[{stem}] 🔍 验证数据完整性...")
-                kf_check = processor.get_keyframe_count(data_dir)
-                if kf_check > 0:
-                    logger.info(f"[{stem}] ✓ 数据完整，跳过解压")
-                    need_extract = False
-                else:
-                    logger.warning(f"[{stem}] ✗ 数据不完整，重新解压")
-                    ssh.exec_command(f"rm -rf '{data_dir}'")
-            
-            if need_extract:
-                # 尝试解压，失败时清理并重试一次
-                max_retries = 2
-                for attempt in range(max_retries):
-                    success, err = processor.process_zip(remote_zip, str(json_file), stem)
-                    if success:
-                        break
-                    
-                    # 解压失败
-                    if attempt < max_retries - 1:
-                        # 还有重试机会，清理并重试
-                        logger.warning(f"[{stem}] 解压失败 (尝试 {attempt + 1}/{max_retries}): {err[:100]}")
-                        logger.info(f"[{stem}] 清理不完整数据并重试...")
-                        ssh.exec_command(f"rm -rf '{data_dir}'")
-                    else:
-                        # 最后一次尝试也失败了
-                        logger.error(f"[{stem}] 解压失败 ({max_retries}次尝试): {err}")
-                        logger.info(f"[{stem}] 清理不完整的数据...")
-                        ssh.exec_command(f"rm -rf '{data_dir}'")
-                        self.result.log_error(stem, "处理", err)
-                        self.result.check_failed.append(stem)
-                        self.state_manager.update(stem, ProcessStatus.FAILED, err)
-                        return False
-            
-<<<<<<< HEAD
-=======
             # 处理（如果 process_dir 中已有数据则跳过）
             if not in_processing:
                 success, err = processor.process_zip(remote_zip, str(json_file), stem)
@@ -897,48 +714,33 @@ class PipelineRunner:
                     self.result.check_failed.append(stem)
                     self.state_manager.update(stem, ProcessStatus.FAILED, err)
                     return False
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
             self.result.processed.append(stem)
             self.state_manager.update(stem, ProcessStatus.PROCESSED)
             
-            # 步骤4: 检查标注质量（如果调度器启用）
+            # 检查
+            data_dir = f"{server.process_dir}/{stem}"
+            passed, issue_count, report, ann_stats = processor.check_annotations(data_dir, stem)
+
+            # 获取关键帧数量
             kf = processor.get_keyframe_count(data_dir)
             self.result.keyframe_counts[stem] = kf
+
+            # 存储标注统计
+            if ann_stats:
+                self.result.annotation_stats[stem] = ann_stats
             
-            if not self.scheduler.should_run(PipelineStep.CHECK):
-                logger.info(f"[{stem}] ⏭ 跳过质量检查 (调度器禁用)")
-                # 假设检查通过
-                self.result.check_passed.append(stem)
-                self.state_manager.update(stem, ProcessStatus.CHECKED)
-            else:
-                logger.info(f"[{stem}] 🔍 检查质量...")
-                passed, issue_count, report = processor.check_annotations(data_dir, stem)
-                
-                if not passed:
-                    logger.error(f"[{stem}] 检查未通过: 发现 {issue_count} 个问题帧")
-                    self.result.log_error(stem, "检查", f"发现 {issue_count} 个问题帧")
-                    self.result.check_failed.append(stem)
-                    self.state_manager.update(stem, ProcessStatus.CHECKED, f"检查失败: {issue_count} 个问题帧")
-                    local_report = self.local_check_dir / f"report_{stem}.txt"
-                    ssh.download_file(report, str(local_report))
-                    return False
-                
-                logger.info(f"[{stem}] ✓ 质量检查通过 ({kf}帧)")
-                self.result.check_passed.append(stem)
-                self.state_manager.update(stem, ProcessStatus.CHECKED)
+            if not passed:
+                self.result.log_error(stem, "检查", f"发现 {issue_count} 个问题帧")
+                self.result.check_failed.append(stem)
+                self.state_manager.update(stem, ProcessStatus.CHECKED, f"检查失败: {issue_count} 个问题帧")
+                # 下载报告
+                local_report = self.local_check_dir / f"report_{stem}.txt"
+                ssh.download_file(report, str(local_report))
+                return False
             
-            # 步骤5: 移动到final_dir（如果调度器启用）
-            if not self.scheduler.should_run(PipelineStep.MOVE_TO_FINAL):
-                logger.info(f"[{stem}] ⏭ 跳过移动到final_dir (调度器禁用)")
-                return True
+            self.result.check_passed.append(stem)
+            self.state_manager.update(stem, ProcessStatus.CHECKED)
             
-<<<<<<< HEAD
-            logger.info(f"[{stem}] 📁 移动到final_dir...")
-            success, dst = processor.move_to_final(stem)
-            if success:
-                logger.info(f"[{stem}] ✓ 完成")
-                self.result.moved_to_final.append(stem)
-=======
             # 根据文件路径选择最终目录
             selected_final_dir = self.select_final_dir(str(json_file))
             print(f"  📁 选择最终目录: {selected_final_dir}")
@@ -955,49 +757,21 @@ class PipelineRunner:
                 # if local_zip.exists():
                 #     local_zip.unlink()
                 # 记录服务器日志
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
                 if self.server_logger:
                     self.server_logger.log_success(stem, kf)
+                # 标记完成
                 self.state_manager.update(stem, ProcessStatus.COMPLETED)
-                
-                # 步骤6: 备份到NAS（如果调度器启用且NAS已配置）
-                if self.scheduler.should_run(PipelineStep.NAS_BACKUP) and self.nas_backup and self.nas_backup.is_enabled:
-                    print(f"  💾 备份到NAS: {stem}")
-                    logger.info(f"[{stem}] 💾 备份到NAS...")
-                    backup_success, backup_msg = self.nas_backup.backup_data(
-                        source_dir=dst,
-                        final_dir=server.final_dir,
-                        data_name=stem
-                    )
-                    if backup_success:
-                        print(f"  ✓ NAS备份成功: {stem}")
-                        logger.info(f"[{stem}] ✓ NAS备份成功")
-                        self.result.backed_up.append(stem)
-                    else:
-                        print(f"  ✗ NAS备份失败: {stem} - {backup_msg}")
-                        logger.warning(f"[{stem}] ✗ NAS备份失败: {backup_msg}")
-                        self.result.backup_failed.append(stem)
-                        # 根据配置决定是否继续
-                        backup_config = self.nas_backup.config.get('backup', {})
-                        if backup_config.get('on_error', 'continue') == 'stop':
-                            self.result.log_error(stem, "NAS备份", backup_msg)
-                            return False
             else:
-<<<<<<< HEAD
-                logger.error(f"[{stem}] ✗ 移动失败: {dst}")
-=======
                 print(f"  ❌ 移动失败: {dst}")
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
                 self.result.log_error(stem, "移动", dst)
-                return False
             
             return True
             
         except Exception as e:
-            logger.error(f"[{stem}] 异常: {e}")
             self.result.log_error(stem, "异常", str(e))
             self.result.check_failed.append(stem)
             self.state_manager.update(stem, ProcessStatus.FAILED, str(e))
+            # 记录失败日志
             if self.server_logger:
                 self.server_logger.log_failure(stem, str(e))
             return False
@@ -1056,13 +830,22 @@ class PipelineRunner:
             ("✓ 检查通过", len(self.result.check_passed)),
             ("✗ 检查失败", len(self.result.check_failed)),
             ("📁 已移动", len(self.result.moved_to_final)),
-            ("💾 NAS备份成功", len(self.result.backed_up)),
-            ("💾 NAS备份失败", len(self.result.backup_failed)),
         ]
         
         total_kf = sum(self.result.keyframe_counts.values())
         if total_kf > 0:
             stats.append(("📊 总关键帧", total_kf))
+
+        if self.result.annotation_stats:
+            total_ann = sum(s.get('total_annotations', 0) for s in self.result.annotation_stats.values())
+            total_box = sum(s.get('box_count', 0) for s in self.result.annotation_stats.values())
+            total_line = sum(s.get('line_count', 0) for s in self.result.annotation_stats.values())
+            if total_ann > 0:
+                stats.append(("📊 总标注数", total_ann))
+            if total_box > 0:
+                stats.append(("📊 3D拉框", total_box))
+            if total_line > 0:
+                stats.append(("📊 3D线段", total_line))
         
         for label, count in stats:
             line = f"║  {label}: {count}"
@@ -1089,33 +872,39 @@ class PipelineRunner:
                             print(f"    │    {line}")
                 print(f"    └─")
     
-    def _track_single_to_feishu(self, tracker: Tracker, stem: str, silent: bool = False):
-        """单个数据包完成后立即同步飞书（如果调度器启用）"""
-        # 检查调度器是否启用飞书同步
-        if not self.scheduler.should_run(PipelineStep.FEISHU_SYNC):
-            return
-        
+    def _track_single_to_feishu(self, tracker: Tracker, stem: str):
+        """单个数据包完成后立即同步飞书"""
         try:
             kf = self.result.keyframe_counts.get(stem, 0)
             status = "已完成" if stem in self.result.check_passed else "检查不通过"
             uploaded = stem in self.result.moved_to_final or stem in self.result.skipped_server_exists
             final_dir = self.result.final_dirs.get(stem)
-            
+            stats = self.result.annotation_stats.get(stem, {})
+            meta = self.config.batch_metadata
+
             record = TrackingRecord(
                 name=stem,
                 keyframe_count=kf,
                 annotation_status=status,
                 uploaded=uploaded,
                 final_dir=final_dir,
+                total_annotations=stats.get('total_annotations', 0),
+                box_count=stats.get('box_count', 0),
+                line_count=stats.get('line_count', 0),
+                annotation_type=stats.get('annotation_type', ''),
+                categories=stats.get('categories'),
+                frame_categories=stats.get('frame_categories'),
+                scene=meta.scene,
+                weather=meta.weather,
+                lighting=meta.lighting,
+                area=meta.area,
             )
-            
-            result = tracker.track([record], str(self.json_dir), "configs/pipeline.yaml")
-            if result and not silent:
-                logger.info(f"飞书已同步: {stem}")
+
+            result = tracker.track([record])
+            if result:
+                print(f"  📤 飞书已同步: {stem}")
         except Exception as e:
             logger.warning(f"飞书同步失败 {stem}: {e}")
-<<<<<<< HEAD
-=======
     
     def _track_to_feishu(self):
         """将处理结果同步到飞书表格（包括跳过的文件）"""
@@ -1133,12 +922,24 @@ class PipelineRunner:
             for name in sorted(all_names):
                 status = "已完成" if name in self.result.check_passed else "检查不通过"
                 uploaded = name in self.result.moved_to_final or name in self.result.skipped_server_exists
+                stats = self.result.annotation_stats.get(name, {})
+                meta = self.config.batch_metadata
                 records.append(TrackingRecord(
                     name=name,
                     keyframe_count=self.result.keyframe_counts.get(name, 0),
                     annotation_status=status,
                     uploaded=uploaded,
                     final_dir=self.result.final_dirs.get(name),
+                    total_annotations=stats.get('total_annotations', 0),
+                    box_count=stats.get('box_count', 0),
+                    line_count=stats.get('line_count', 0),
+                    annotation_type=stats.get('annotation_type', ''),
+                    categories=stats.get('categories'),
+                    frame_categories=stats.get('frame_categories'),
+                    scene=meta.scene,
+                    weather=meta.weather,
+                    lighting=meta.lighting,
+                    area=meta.area,
                 ))
             
             if not records:
@@ -1147,7 +948,7 @@ class PipelineRunner:
             print()
             print(f"  📤 同步到飞书: {len(records)} 条记录...")
             
-            result = tracker.track(records, str(self.json_dir))
+            result = tracker.track(records)
             
             if result:
                 created = result.get('created', 0)
@@ -1160,4 +961,3 @@ class PipelineRunner:
         except Exception as e:
             logger.warning(f"飞书追踪失败: {e}")
             print(f"  ⚠ 飞书同步失败: {e}")
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)

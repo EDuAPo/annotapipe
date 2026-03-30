@@ -6,7 +6,7 @@ import os
 import time
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -76,7 +76,20 @@ class TrackingRecord:
     uploaded: bool = False
     attributes: List[str] = None
     final_dir: str = None
-    
+    # 标注统计（自动提取）
+    total_annotations: int = 0
+    total_frames: int = 0
+    box_count: int = 0
+    line_count: int = 0
+    annotation_type: str = ""
+    categories: dict = None          # 原始类别字典 {class_name: total_count}
+    frame_categories: dict = None    # 帧级类别字典 {class_name: frame_count}
+    # 批次元数据（手动配置）
+    scene: str = ""
+    weather: str = ""
+    lighting: str = ""
+    area: str = ""
+
     def __post_init__(self):
         if self.attributes is None:
             self.attributes = []
@@ -106,7 +119,7 @@ class LocalTracker(BaseTracker):
             f.write("=" * 60 + "\n")
             f.write("标注数据处理统计报告\n")
             f.write("=" * 60 + "\n\n")
-            
+
             total_keyframes = 0
             for rec in records:
                 f.write(f"数据包: {rec.name}\n")
@@ -115,9 +128,25 @@ class LocalTracker(BaseTracker):
                 f.write(f"  已上传: {'是' if rec.uploaded else '否'}\n")
                 if rec.attributes:
                     f.write(f"  属性: {', '.join(rec.attributes)}\n")
+                if rec.total_annotations:
+                    f.write(f"  总标注数: {rec.total_annotations}\n")
+                    f.write(f"  拉框数: {rec.box_count}\n")
+                    f.write(f"  线段数: {rec.line_count}\n")
+                    f.write(f"  标注类型: {rec.annotation_type}\n")
+                if rec.categories:
+                    cat_str = ", ".join(f"{k}:{v}" for k, v in rec.categories.items())
+                    f.write(f"  类别分布: {cat_str}\n")
+                if rec.scene:
+                    f.write(f"  场景: {rec.scene}\n")
+                if rec.weather:
+                    f.write(f"  天气: {rec.weather}\n")
+                if rec.lighting:
+                    f.write(f"  光照: {rec.lighting}\n")
+                if rec.area:
+                    f.write(f"  区域: {rec.area}\n")
                 f.write("\n")
                 total_keyframes += rec.keyframe_count
-            
+
             f.write("-" * 60 + "\n")
             f.write(f"总计: {len(records)} 个数据包, {total_keyframes} 个关键帧\n")
         
@@ -172,14 +201,12 @@ class FeishuTracker(BaseTracker):
     def is_available(self) -> bool:
         return self._available and self.config.get('enabled', True)
     
-    def _get_token(self, force_refresh: bool = False) -> str:
+    def _get_token(self) -> str:
         """获取 tenant_access_token"""
-        # 如果有缓存的token且未过期，直接返回
-        if not force_refresh and self._token and self._token_time:
-            if time.time() - self._token_time < 6900:  # 提前100秒刷新，避免边界情况
+        if self._token and self._token_time:
+            if time.time() - self._token_time < 7000:
                 return self._token
         
-        # 获取新token
         url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
         payload = {
             "app_id": self.config.get('app_id', ''),
@@ -192,27 +219,14 @@ class FeishuTracker(BaseTracker):
             if data.get('code') == 0:
                 self._token = data.get('tenant_access_token')
                 self._token_time = time.time()
-                logger.debug(f"✓ 飞书token获取成功")
                 return self._token
-            else:
-                logger.error(f"获取飞书token失败: code={data.get('code')}, msg={data.get('msg')}")
-                # 清除缓存的token
-                self._token = None
-                self._token_time = None
         except Exception as e:
-            logger.error(f"获取飞书token异常: {e}")
-            # 清除缓存的token
-            self._token = None
-            self._token_time = None
+            logger.error(f"获取飞书 Token 失败: {e}")
         return ""
     
-    def _get_headers(self, force_refresh: bool = False) -> Dict[str, str]:
-        """获取请求头，如果token无效会自动刷新"""
-        token = self._get_token(force_refresh=force_refresh)
-        if not token:
-            raise Exception("无法获取有效的飞书token")
+    def _get_headers(self) -> Dict[str, str]:
         return {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {self._get_token()}",
             "Content-Type": "application/json"
         }
     
@@ -238,29 +252,12 @@ class FeishuTracker(BaseTracker):
                 params["page_token"] = page_token
             
             try:
-                # 尝试获取数据，如果token失效则刷新后重试
-                for attempt in range(2):
-                    try:
-                        headers = self._get_headers(force_refresh=(attempt > 0))
-                        r = requests.get(url, params=params, headers=headers, timeout=30)
-                        data = r.json()
-                        
-                        # 检查是否是token失效错误
-                        if data.get('code') == 99991663 and attempt == 0:
-                            logger.warning("飞书token失效，刷新后重试...")
-                            continue
-                        
-                        if data.get('code') != 0:
-                            logger.error(f"加载记录失败: code={data.get('code')}, msg={data.get('msg')}")
-                            break
-                        
-                        # 成功，跳出重试循环
-                        break
-                    except Exception as e:
-                        if attempt == 0:
-                            logger.warning(f"请求失败，重试中: {e}")
-                            continue
-                        raise
+                r = requests.get(url, params=params, headers=self._get_headers(), timeout=30)
+                data = r.json()
+                
+                if data.get('code') != 0:
+                    logger.error(f"加载记录失败: code={data.get('code')}, msg={data.get('msg')}")
+                    break
                 
                 items = data.get('data', {}).get('items', [])
                 for item in items:
@@ -324,6 +321,32 @@ class FeishuTracker(BaseTracker):
         logger.debug(f"  ✗ 未找到: {name} (将新增)")
         return None
     
+    def get_completed_names(self) -> Set[str]:
+        """获取飞书中标注情况为"已完成"的数据包名称集合"""
+        if not self.is_available:
+            return set()
+        if not self._get_token():
+            return set()
+
+        all_records = self._load_all_records(force_reload=True)
+        completed = set()
+        for name, record in all_records.items():
+            fields = record.get('fields', {})
+            status_val = fields.get('标注情况', [])
+            # 多选字段可能是字符串列表或对象列表
+            if isinstance(status_val, list):
+                status_texts = []
+                for item in status_val:
+                    if isinstance(item, dict):
+                        status_texts.append(item.get('text', ''))
+                    else:
+                        status_texts.append(str(item))
+                if '已完成' in status_texts:
+                    completed.add(name)
+            elif isinstance(status_val, str) and '已完成' in status_val:
+                completed.add(name)
+        return completed
+
     def _batch_create_records(self, records_fields: List[Dict]) -> tuple:
         """批量创建记录，返回 (创建数量, 创建的记录列表)"""
         if not records_fields:
@@ -335,38 +358,22 @@ class FeishuTracker(BaseTracker):
         
         # batch_create API 使用字段名，不需要转换为字段ID
         payload = {"records": [{"fields": f} for f in records_fields]}
-        
-        # 尝试创建，如果token失效则刷新后重试
-        for attempt in range(2):
-            try:
-                headers = self._get_headers(force_refresh=(attempt > 0))
-                r = requests.post(url, json=payload, headers=headers, timeout=30)
-                data = r.json()
-                
-                # 检查是否是token失效错误
-                if data.get('code') == 99991663 and attempt == 0:
-                    logger.warning("飞书token失效，刷新后重试...")
-                    continue
-                
-                if data.get('code') == 0:
-                    created_records = data.get('data', {}).get('records', [])
-                    created = len(created_records)
-                    # 打印创建的记录详情
-                    for rec in created_records:
-                        rec_id = rec.get('record_id', 'N/A')
-                        name = rec.get('fields', {}).get('数据包名称', 'N/A')
-                        logger.debug(f"  ✓ 已创建: {name} (record_id={rec_id})")
-                    return created, created_records
-                else:
-                    logger.error(f"批量创建失败: code={data.get('code')}, msg={data.get('msg')}")
-                    return 0, []
-            except Exception as e:
-                if attempt == 0:
-                    logger.warning(f"创建请求失败，重试中: {e}")
-                    continue
-                logger.error(f"批量创建异常: {e}")
-                return 0, []
-        
+        try:
+            r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
+            data = r.json()
+            if data.get('code') == 0:
+                created_records = data.get('data', {}).get('records', [])
+                created = len(created_records)
+                # 打印创建的记录详情
+                for rec in created_records:
+                    rec_id = rec.get('record_id', 'N/A')
+                    name = rec.get('fields', {}).get('数据包名称', 'N/A')
+                    logger.debug(f"  ✓ 已创建: {name} (record_id={rec_id})")
+                return created, created_records
+            else:
+                logger.error(f"批量创建失败: code={data.get('code')}, msg={data.get('msg')}")
+        except Exception as e:
+            logger.error(f"批量创建异常: {e}")
         return 0, []
     
     def _batch_update_records(self, records: List[Dict]) -> int:
@@ -381,41 +388,6 @@ class FeishuTracker(BaseTracker):
         # batch_update API 也使用字段名，不需要转换为字段ID
         payload = {"records": records}
         logger.debug(f"📝 更新请求: record_id={records[0]['record_id'] if records else 'N/A'}, fields={records[0]['fields'] if records else {}}")
-<<<<<<< HEAD
-        
-        # 尝试更新，如果token失效则刷新后重试
-        for attempt in range(2):
-            try:
-                headers = self._get_headers(force_refresh=(attempt > 0))
-                r = requests.post(url, json=payload, headers=headers, timeout=30)
-                data = r.json()
-                logger.debug(f"📝 更新响应: code={data.get('code')}, msg={data.get('msg', 'OK')}")
-                
-                # 检查是否是token失效错误
-                if data.get('code') == 99991663 and attempt == 0:
-                    logger.warning("飞书token失效，刷新后重试...")
-                    continue
-                
-                if data.get('code') == 0:
-                    updated_records = data.get('data', {}).get('records', [])
-                    for rec in updated_records:
-                        rec_id = rec.get('record_id', 'N/A')
-                        name = rec.get('fields', {}).get('数据包名称', 'N/A')
-                        logger.debug(f"  ✓ 已更新: {name} (record_id={rec_id})")
-                    return len(updated_records)
-                else:
-                    logger.error(f"批量更新失败: code={data.get('code')}, msg={data.get('msg')}")
-                    if records:
-                        logger.error(f"更新记录示例: {records[0]}")
-                    return 0
-            except Exception as e:
-                if attempt == 0:
-                    logger.warning(f"更新请求失败，重试中: {e}")
-                    continue
-                logger.error(f"批量更新异常: {e}")
-                return 0
-        
-=======
         try:
             r = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
             data = r.json()
@@ -435,78 +407,58 @@ class FeishuTracker(BaseTracker):
                     logger.error(f"更新记录示例: {records[0]}")
         except Exception as e:
             logger.error(f"批量更新异常: {e}")
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         return 0
-    
-    def _get_path_field_from_pipeline(self, pipeline_config_path: str) -> str:
-        """从 pipeline.yaml 读取 final_dir 并转换为飞书列名
-        
-        例如: /data02/dataset/scenesnew -> 上传data02/dataset/scenesnew
-        """
-        try:
-            config_path = Path(pipeline_config_path)
-            if not config_path.exists():
-                logger.warning(f"Pipeline配置文件不存在: {pipeline_config_path}，使用默认路径")
-                return "上传data02/dataset/scenesnew"
-            
-            with open(config_path, 'r', encoding='utf-8') as f:
-                pipeline_config = yaml.safe_load(f) or {}
-            
-            # 获取第一个启用的服务器的 final_dir
-            servers = pipeline_config.get('servers', [])
-            for server in servers:
-                if server.get('enabled', True):
-                    final_dir = server.get('final_dir', '')
-                    if final_dir:
-                        # 去掉开头的 '/'，然后加上 '上传' 前缀
-                        path_without_slash = final_dir.lstrip('/')
-                        path_field = f"上传{path_without_slash}"
-                        logger.debug(f"从 pipeline.yaml 读取路径: {final_dir} -> {path_field}")
-                        return path_field
-            
-            logger.warning("未找到启用的服务器配置，使用默认路径")
-            return "上传data02/dataset/scenesnew"
-        except Exception as e:
-            logger.warning(f"读取 pipeline.yaml 失败: {e}，使用默认路径")
-            return "上传data02/dataset/scenesnew"
     
     def detect_attributes(self, json_dir: str) -> List[str]:
         """从路径中检测数据属性"""
         attributes = []
         keywords = self.config.get('attribute_keywords', {})
         path_str = str(json_dir).lower()
-        
+
         for attr_name, keywords_list in keywords.items():
             for keyword in keywords_list:
                 if keyword.lower() in path_str:
                     attributes.append(attr_name)
                     break
         return attributes
+
+    def _format_category_distribution(self, frame_categories: dict, total_frames: int = 0) -> str:
+        """将帧级类别字典按映射表格式化为占比过滤后的短字母拼接
+
+        例如: frame_categories = {vehicle.car: 80, traffic_cone: 15, unknown: 5}, total_frames=100
+        占比阈值 = 10% -> 只保留 car(80%) 和 cone(15%) -> "CK"
+        """
+        mapping = self.config.get('category_mapping', {})
+        ratio_threshold = self.config.get('category_ratio_threshold', 0.1)
+
+        if total_frames <= 0:
+            total_frames = max(frame_categories.values()) if frame_categories else 1
+
+        # 按帧数降序排列，过滤低于占比阈值的类别
+        items = sorted(frame_categories.items(), key=lambda x: -x[1])
+        letters = []
+        for cls, frame_count in items:
+            ratio = frame_count / total_frames
+            if ratio >= ratio_threshold:
+                short = mapping.get(cls, cls[0].upper() if cls else '?')
+                letters.append(short)
+
+        return "".join(letters)
     
-    def track(self, records: List[TrackingRecord], json_dir: str = None, pipeline_config_path: str = "configs/pipeline.yaml") -> Dict[str, Any]:
+    def track(self, records: List[TrackingRecord]) -> Dict[str, Any]:
         """追踪到飞书表格"""
         if not self.is_available:
             logger.warning("飞书追踪器不可用，跳过")
             return {}
-        
+
         # 检查token是否有效
         if not self._get_token():
             logger.warning("飞书Token获取失败，回退到本地追踪")
             return {}
-        
+
         # 强制重新加载记录，确保缓存是最新的
         self._load_all_records(force_reload=True)
-        
-        attributes = self.detect_attributes(json_dir) if json_dir else []
-        
-<<<<<<< HEAD
-        # 从 pipeline.yaml 动态读取 final_dir 并转换为飞书列名
-        path_field = self._get_path_field_from_pipeline(pipeline_config_path)
-=======
-        # field_mapping用于路径列匹配
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
-        field_mapping = self.config.get('field_mapping', {})
-        
+
         to_create = []
         to_update = []
         created_names = []
@@ -522,70 +474,52 @@ class FeishuTracker(BaseTracker):
             logger.debug(f"🔍 搜索记录: {rec.name}")
             existing = self._search_record(rec.name)
             
-            # 注意：飞书多维表格的字段类型
-            # 只更新复选框类型的属性/路径字段
+            # 构建字段
             fields = {}
             
             if existing:
-                # 更新模式：更新关键帧数、标注情况、更新时间和属性/路径
-                existing_fields = existing.get('fields', {})
-                
-                # 更新关键帧数、标注情况、更新时间（注意字段类型）
-                # 关键帧数是文本类型，需要字符串
-                # 标注情况是多选类型，需要数组
-                # 更新时间是日期时间类型，需要毫秒时间戳
+                # 更新模式
                 fields["关键帧数"] = str(rec.keyframe_count)
                 fields["标注情况"] = [rec.annotation_status]
                 fields["更新时间"] = int(time.time() * 1000)
-                
-                # 属性列：保留已有的 True 值 + 新增当前属性
-                for attr_name in field_mapping.keys():
-                    if attr_name.endswith('属性'):
-                        if existing_fields.get(attr_name):
-                            fields[attr_name] = True
-                
-                # 新增当前检测到的属性
-                for attr in attributes:
-                    attr_field = f"{attr}属性"
-                    if attr_field in field_mapping:
-                        fields[attr_field] = True
-                
-                # 路径列：累加模式，保留已有的路径，新增当前路径
-                # 同一个数据包可能同时存在于多个 final_dir
-                # 保留已有的上传路径（不清除）
-                for field_name in field_mapping.keys():
-                    if field_name.startswith('上传'):
-                        if existing_fields.get(field_name):
-                            fields[field_name] = True
-                
-                # 新增当前路径为True
-                if rec.uploaded and rec.final_dir:
-                    current_path_field = f'上传{rec.final_dir.lstrip("/")}'
-                    if current_path_field in field_mapping:
-                        fields[current_path_field] = True
-                
+
+                # 类别字段（占比过滤后的短字母拼接，如 "PKSU"）
+                if rec.frame_categories:
+                    fields["类别"] = self._format_category_distribution(rec.frame_categories, rec.total_frames)
+
+                # 批次元数据字段（多选类型，需要数组格式）
+                if rec.scene:
+                    fields["场景"] = [rec.scene]
+                if rec.weather:
+                    fields["天气"] = [rec.weather]
+                if rec.lighting:
+                    fields["光照"] = [rec.lighting]
+                if rec.area:
+                    fields["区域"] = [rec.area]
+
                 to_update.append({"record_id": existing['record_id'], "fields": fields})
                 updated_names.append(rec.name)
             else:
-                # 创建模式：设置名称、关键帧数、标注情况、更新时间和复选框字段
-                # 注意字段类型：关键帧数是文本，标注情况是多选数组，更新时间是毫秒时间戳
+                # 创建模式
                 fields["数据包名称"] = rec.name
                 fields["关键帧数"] = str(rec.keyframe_count)
                 fields["标注情况"] = [rec.annotation_status]
                 fields["更新时间"] = int(time.time() * 1000)
-                
-                for attr in attributes:
-                    attr_field = f"{attr}属性"
-                    if attr_field in field_mapping:
-                        fields[attr_field] = True
-                
-                # 设置上传路径（根据record的final_dir）
-                if rec.uploaded and rec.final_dir:
-                    current_path_field = f'上传{rec.final_dir.lstrip("/")}'
-                    if current_path_field in field_mapping:
-                        # 对于新记录，我们可以安全地设置字段，因为表格定义中包含了所有字段
-                        fields[current_path_field] = True
-                
+
+                # 类别字段
+                if rec.frame_categories:
+                    fields["类别"] = self._format_category_distribution(rec.frame_categories, rec.total_frames)
+
+                # 批次元数据字段（多选类型，需要数组格式）
+                if rec.scene:
+                    fields["场景"] = [rec.scene]
+                if rec.weather:
+                    fields["天气"] = [rec.weather]
+                if rec.lighting:
+                    fields["光照"] = [rec.lighting]
+                if rec.area:
+                    fields["区域"] = [rec.area]
+
                 to_create.append(fields)
                 created_names.append(rec.name)
         
@@ -614,7 +548,7 @@ class FeishuTracker(BaseTracker):
             if i + 500 < len(to_update):
                 time.sleep(0.5)
         
-        logger.info(f"✅ 飞书更新: 新增 {created_count}, 更新 {updated_count}")
+        logger.info(f"✅ 飞书更新: 新增 {created_count}, 更新 {updated_count}, 关键帧 {total_keyframes}")
         
         return {
             'created': created_names,
@@ -631,19 +565,15 @@ class Tracker:
         self.local = LocalTracker()
         self._use_feishu = self.feishu.is_available
     
-    def track(self, records: List[TrackingRecord], json_dir: str = None, pipeline_config_path: str = "configs/pipeline.yaml") -> Dict[str, Any]:
+    def track(self, records: List[TrackingRecord]) -> Dict[str, Any]:
         """追踪记录"""
         if self._use_feishu:
-<<<<<<< HEAD
-            return self.feishu.track(records, json_dir, pipeline_config_path)
-=======
-            result = self.feishu.track(records, json_dir)
+            result = self.feishu.track(records)
             if result:  # 如果飞书追踪成功，返回结果
                 return result
             else:  # 飞书追踪失败，回退到本地
                 logger.info("飞书追踪失败，回退到本地追踪")
                 return self.local.track(records)
->>>>>>> 147cdc9 (Update: Code improvements and new backup tools)
         else:
             return self.local.track(records)
     
@@ -653,29 +583,47 @@ class Tracker:
             return self.feishu.detect_attributes(json_dir)
         return []
 
+    def get_completed_names(self) -> Set[str]:
+        """获取飞书中已完成的数据包名称集合"""
+        if self._use_feishu:
+            return self.feishu.get_completed_names()
+        return set()
 
-def create_tracking_records(result, keyframe_counts: Dict[str, int]) -> List[TrackingRecord]:
+
+def create_tracking_records(result, keyframe_counts: Dict[str, int],
+                            annotation_stats: Dict[str, dict] = None,
+                            batch_metadata=None) -> List[TrackingRecord]:
     """从 PipelineResult 创建追踪记录"""
+    annotation_stats = annotation_stats or {}
     records = []
-    
+
     # 只处理成功的数据包（检查通过或已在服务器上）
     successful_names = set()
     successful_names.update(result.check_passed)
     successful_names.update(result.skipped_server_exists)
-    
+
     for name in sorted(successful_names):
-        # 确定标注状态
-        status = "已完成"  # 这些都是成功的
-        
-        # 是否已上传
+        status = "已完成"
         uploaded = name in result.moved_to_final or name in result.skipped_server_exists
-        
+        stats = annotation_stats.get(name, {})
+
         records.append(TrackingRecord(
             name=name,
             keyframe_count=keyframe_counts.get(name, 0),
             annotation_status=status,
             uploaded=uploaded,
             final_dir=result.final_dirs.get(name),
+            total_annotations=stats.get('total_annotations', 0),
+            total_frames=stats.get('total_frames', 0),
+            box_count=stats.get('box_count', 0),
+            line_count=stats.get('line_count', 0),
+            annotation_type=stats.get('annotation_type', ''),
+            categories=stats.get('categories'),
+            frame_categories=stats.get('frame_categories'),
+            scene=batch_metadata.scene if batch_metadata else '',
+            weather=batch_metadata.weather if batch_metadata else '',
+            lighting=batch_metadata.lighting if batch_metadata else '',
+            area=batch_metadata.area if batch_metadata else '',
         ))
-    
+
     return records
